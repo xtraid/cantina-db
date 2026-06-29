@@ -1,0 +1,23 @@
+# --- Python / uv ---
+.venv/
+__pycache__/
+*.py[cod]
+.python-version
+
+# --- Segreti / configurazione locale ---
+.env
+.env.*
+secrets.toml
+.streamlit/secrets.toml
+
+# --- IDE ---
+.idea/
+.vscode/
+
+# --- Dump / backup DB ---
+*.dump
+dump.sql
+
+# --- OS ---
+.DS_Store
+*~
