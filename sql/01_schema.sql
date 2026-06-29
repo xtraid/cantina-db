@@ -29,6 +29,7 @@ DROP TABLE IF EXISTS vitigno;
 DROP TABLE IF EXISTS fornitore;
 DROP TABLE IF EXISTS produttore;
 DROP TABLE IF EXISTS regione;
+DROP TABLE IF EXISTS paese;
 DROP TABLE IF EXISTS dipendente;
 DROP TABLE IF EXISTS cantina;
 DROP TABLE IF EXISTS azienda;
@@ -78,13 +79,22 @@ CREATE TABLE dipendente (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 -- "Lavora_in": Dipendente (1:1) - Cantina (1:N) => FK su Dipendente, NOT NULL
 
+CREATE TABLE paese (
+    id_paese            INT AUTO_INCREMENT PRIMARY KEY,
+    nome_paese          VARCHAR(100) NOT NULL UNIQUE,
+    code_iso            VARCHAR(10)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE regione (
     id_regione          INT AUTO_INCREMENT PRIMARY KEY,
-    nome_paese          VARCHAR(100) NOT NULL UNIQUE,
-    code_iso            VARCHAR(10),
-    nome_regione        VARCHAR(100),
-    zona                VARCHAR(100)
+    nome_regione        VARCHAR(100) NOT NULL,
+    zona                VARCHAR(100),
+    id_paese            INT NOT NULL,
+    CONSTRAINT fk_regione_paese
+        FOREIGN KEY (id_paese) REFERENCES paese(id_paese),
+    CONSTRAINT uq_regione_paese_regione UNIQUE (id_paese, nome_regione)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+-- Decomposizione 2NF: code_iso (proprieta' del Paese) separato da Regione (vedi progettazione sez. 11)
 
 CREATE TABLE produttore (
     id_produttore       INT AUTO_INCREMENT PRIMARY KEY,
@@ -338,6 +348,7 @@ CREATE TABLE carta_vini_voce (
 CREATE INDEX idx_cantina_azienda       ON cantina(id_azienda);
 CREATE INDEX idx_dipendente_cantina    ON dipendente(id_cantina);
 CREATE INDEX idx_bevanda_produttore    ON bevanda(id_produttore);
+CREATE INDEX idx_regione_paese         ON regione(id_paese);
 CREATE INDEX idx_bevanda_regione       ON bevanda(id_regione);
 CREATE INDEX idx_movimenti_bevanda     ON movimenti(id_bevanda);
 CREATE INDEX idx_movimenti_dipendente  ON movimenti(id_dipendente);

@@ -1,4 +1,6 @@
-# MyProject — Progettazione concettuale
+# Progettazione concettuale e logica
+
+> 🇬🇧 English version: [`progettazione.en.md`](progettazione.en.md)
 
 Gestionale per la gestione di cantine e dello stoccaggio di bevande.
 
@@ -202,7 +204,9 @@ Il gestionale gestisce infine i movimenti di magazzino: dai movimenti di carico 
 
 ## 6. Schema ER (riferimento)
 
-![Schema ER — MyProject](db_vect.svg)
+![Schema ER](er.png)
+
+*(versione vettoriale: [er.svg](er.svg))*
 
 ---
 
@@ -380,7 +384,8 @@ violazioni. Di conseguenza ogni chiave naturale resta protetta da un vincolo `UN
 
 | Entità | PK | Vincolo / note |
 |---|---|---|
-| Regione | id_regione | `UNIQUE(nome_paese)` |
+| Paese | id_paese | `UNIQUE(nome_paese)` (decomposto da Regione, vedi Sez. 11.2) |
+| Regione | id_regione | FK `id_paese`; `UNIQUE(id_paese, nome_regione)` |
 | Vitigno | id_vitigno | `UNIQUE(nome)` |
 | Dipendente | id_dipendente | `UNIQUE(matricola)` |
 | Cantina | id_cantina | FK `id_azienda`; opz. `UNIQUE(id_azienda, numero)` |
@@ -407,7 +412,8 @@ dalle FK coinvolte (è già univoca e significativa, evita un surrogato inutile)
 - Azienda(**id_azienda**, ragione_sociale, p_iva, tipo, indirizzo_sede_principale, email, pec, telefono, titolare, sito_web, attivo)
 - Cantina(**id_cantina**, nome, indirizzo, tipo, id_azienda -> Azienda)
 - Dipendente(**id_dipendente**, matricola [U], nome, cognome, ruolo, username, password_hash, email, attivo, id_cantina -> Cantina)
-- Regione(**id_regione**, nome_paese [U], code_iso, nome_regione, zona)
+- Paese(**id_paese**, nome_paese [U], code_iso)
+- Regione(**id_regione**, nome_regione, zona, id_paese -> Paese) — UNIQUE(id_paese, nome_regione)
 - Produttore(**id_produttore**, nome, paese, sito_web, attivo)
 - Fornitore(**id_fornitore**, ragione_sociale, p_iva, is_cliente, is_fornitore, indirizzo, telefono, email, attivo)
 - Vitigno(**id_vitigno**, nome [U], sinonimo)
@@ -483,7 +489,7 @@ schema è in 1NF**.
 La 2NF riguarda **solo** le dipendenze **parziali** da una chiave **composta** (un attributo
 non-chiave che dipende da una sola parte della PK).
 
-- **17 entità a PK semplice** (surrogato `id_…`): una relazione in 1NF con PK semplice è
+- **18 entità a PK semplice** (surrogato `id_…`): una relazione in 1NF con PK semplice è
   **automaticamente in 2NF**, perché non esiste "una parte" della chiave da cui un attributo
   possa dipendere parzialmente.
 - **5 tabelle a PK composta** (junction N:M e multivalore) — le uniche da verificare:
@@ -498,6 +504,15 @@ non-chiave che dipende da una sola parte della PK).
     non-chiave) -> banalmente in 2NF (e 3NF): non esiste attributo che possa dipendere in
     modo parziale o transitivo da alcunché.
 
+**Decomposizione Paese/Regione (per preservare la 2NF).** Per rappresentare più
+regioni nello stesso Paese (es. Piemonte e Veneto in Italia) la chiave naturale di
+una `Regione` accorpata sarebbe `(nome_paese, nome_regione)`. Ma `code_iso` dipende
+**solo** da `nome_paese` — una *parte* della chiave -> **dipendenza parziale**, una
+violazione di 2NF (il codice ISO è proprietà del Paese, non della regione). Per
+evitarla si **decompone** in `Paese(`**nome_paese**`, code_iso)` e
+`Regione(`**nome_regione**`, zona, -> Paese)`: così in `Paese` `code_iso` dipende
+dall'intera chiave e `Regione` non contiene più attributi del Paese -> entrambe in 2NF.
+
 -> **tutto lo schema è in 2NF**.
 
 ### 11.3 Terza forma normale (3NF)
@@ -507,7 +522,7 @@ La 3NF vieta le **dipendenze transitive** fra attributi non-chiave (`A -> B -> C
 costruzione**: ogni tabella descrive una sola entità o associazione e i suoi attributi
 descrivono direttamente la chiave. Le poche dipendenze funzionali fra attributi naturali
 hanno come **determinante una chiave candidata** e quindi non violano la 3NF — per esempio
-in `Regione` la FD `nome_paese -> code_iso` (il codice ISO è determinato dal paese) ha per
+in `Paese` la FD `nome_paese -> code_iso` (il codice ISO è determinato dal paese) ha per
 determinante `nome_paese`, che è chiave candidata (`UNIQUE`).
 
 Inoltre, gli attributi derivabili che **non vengono memorizzati** (prezzo IVA-incluso di una
@@ -546,5 +561,5 @@ considerata.
 | Forma normale | Esito | Dettaglio |
 |---|---|---|
 | **1NF** | rispettata da tutto lo schema | colonne atomiche; multivalore già eliminati in Sez. 9.2 (luppoli/malti/ingredienti -> tabelle dedicate) |
-| **2NF** | rispettata da tutto lo schema | 17 entità a PK semplice -> automatico; 5 a PK composta verificate (dipendenza piena su `Composto`/`Contiene_voce`; 3 all-key banali) |
+| **2NF** | rispettata da tutto lo schema | 18 entità a PK semplice -> automatico; 5 a PK composta verificate; `Regione` decomposta in `Paese`+`Regione` per evitare la dipendenza parziale di `code_iso` |
 | **3NF** | rispettata salvo 2 scelte deliberate | violazioni consapevoli: `giacenza` (colonna calcolata) e `Movimenti.id_cantina` (transitiva via dipendente), motivate in Sez. 8/8.1 e mantenute dai trigger |

@@ -28,7 +28,11 @@ vinification and aging.
 > design document (`docs/progettazione.md`), which is the graded deliverable.
 
 Full E-R schema and design rationale in
-[`docs/progettazione.md`](docs/progettazione.md) and [`docs/er.svg`](docs/er.svg).
+[`docs/progettazione.en.md`](docs/progettazione.en.md).
+
+![E-R schema](docs/er.png)
+
+*(vector version: [`docs/er.svg`](docs/er.svg))*
 
 ## Technical highlights
 
@@ -55,9 +59,9 @@ Full E-R schema and design rationale in
 cantina-db/
 ├── sql/
 │   ├── 01_schema.sql      # DDL: tables, constraints, indexes
-│   ├── 02_triggers.sql    # (wip) stock, non-graphical constraints
-│   ├── 03_views.sql       # (wip) per-role views
-│   └── 04_seed.sql        # (wip) realistic sample data
+│   ├── 02_seed.sql        # realistic sample data
+│   ├── 03_triggers.sql    # (wip) stock maintenance, non-graphical constraints
+│   └── 04_views.sql       # (wip) per-role views
 ├── app/                   # (wip) Streamlit application
 ├── docs/
 │   ├── progettazione.md   # design document (requirements -> logical -> 3NF)
@@ -71,8 +75,9 @@ cantina-db/
 # 1. create the database (as root)
 sudo mariadb -e "CREATE DATABASE cantina CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
 
-# 2. load the schema
+# 2. load schema + sample data
 mariadb -u <user> -p cantina < sql/01_schema.sql
+mariadb -u <user> -p cantina < sql/02_seed.sql
 ```
 
 ## Status
