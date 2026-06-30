@@ -6,7 +6,7 @@ st.title("Cantina * accesso")
 
 
 def log_in(username, password):
-    """ search username and
+    """search username and
     check if the password hash is the same"""
 
     rows = run_query(
@@ -20,6 +20,21 @@ def log_in(username, password):
     if bcrypt.checkpw(password.encode(), user["password_hash"].encode()):
         return user
     return None
+
+
+def owner_page(u):
+    st.header("Owner's dashboard")
+    st.write("placeholder: Cellar summary, sales, employee manager")
+
+
+def store_page(u):
+    st.header("Store")
+    st.write("placeholder: inventory, movements registration")
+
+
+def waiter_page(u):
+    st.header("Wine sheet")
+    st.write("placeholder: wine sheet and sells registration")
 
 
 if "user" not in st.session_state:
@@ -43,3 +58,13 @@ else:
     if st.button("Logout"):
         st.session_state.user = None
         st.rerun()
+    st.divider()
+    role = u["ruolo"]
+    if role == "titolare":
+        owner_page(u)
+    elif role == "magazziniere":
+        store_page(u)
+    elif role == "cameriere":
+        waiter_page(u)
+    else:
+        st.warning(f"Role not recognised: {role}")

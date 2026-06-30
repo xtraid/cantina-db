@@ -27,7 +27,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do
 - [ ] `04_views.sql` — per-role external schema                           ← also Track A (topic09)
 - [x] App: project setup + DB connection (parameterized, injection-safe)  ← topic12
 - [x] App: authentication (employee login, role in session)
-- [ ] App: per-role pages (warehouse / waiter / owner)
+- [~] App: per-role pages (warehouse / waiter / owner)  — routing skeleton done, content next
 - [ ] App: movement registration (load/sale -> stock moves live)
 - [ ] App: permissions demo (GRANT/REVOKE, real DB roles)                 ← topic09
 - [ ] README polish — app screenshot / short gif
