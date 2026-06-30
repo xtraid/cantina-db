@@ -44,13 +44,13 @@ INSERT INTO cantina (id_cantina, nome, indirizzo, tipo, id_azienda) VALUES
 (2, 'Punto vendita Milano', 'Corso Garibaldi 88, Milano', 'enoteca', 1);
 
 -- ===================== DIPENDENTI =====================
--- password_hash: placeholder; verranno rigenerati con bcrypt in fase di app.
+-- password_hash: bcrypt (cost 12). Tutti i dipendenti hanno la password demo 'cantina2026'.
 
 INSERT INTO dipendente (id_dipendente, matricola, nome, cognome, ruolo, username, password_hash, email, id_cantina) VALUES
-(1, 1001, 'Giulia',  'Bernardi', 'titolare',     'g.bernardi', '$2b$12$placeholderHashTitolare......................', 'g.bernardi@enotecaadriatica.it', 1),
-(2, 1002, 'Marco',   'Ferri',    'magazziniere', 'm.ferri',    '$2b$12$placeholderHashMagazz1......................', 'm.ferri@enotecaadriatica.it',    1),
-(3, 1003, 'Sara',    'Conti',    'cameriere',    's.conti',    '$2b$12$placeholderHashCamer1......................', 's.conti@enotecaadriatica.it',    1),
-(4, 1004, 'Luca',    'Rossi',    'magazziniere', 'l.rossi',    '$2b$12$placeholderHashMagazz2......................', 'l.rossi@enotecaadriatica.it',    2);
+(1, 1001, 'Giulia',  'Bernardi', 'titolare',     'g.bernardi', '$2b$12$WCbOfmBJVyeoxWA1vbV4sej/k4ltiXqz7lOsDEVoi.gkEK..9OdQe', 'g.bernardi@enotecaadriatica.it', 1),
+(2, 1002, 'Marco',   'Ferri',    'magazziniere', 'm.ferri',    '$2b$12$ztTyo9kI0inXFP17gC32Iu3frWyT3g1BXlIUiBt6YEaK8bjbm4cZu', 'm.ferri@enotecaadriatica.it',    1),
+(3, 1003, 'Sara',    'Conti',    'cameriere',    's.conti',    '$2b$12$Ak8kxqc0vWvKQbzrWMe4U.AKsQeeCHva/VmjeEQwU87dIBq76jniK', 's.conti@enotecaadriatica.it',    1),
+(4, 1004, 'Luca',    'Rossi',    'magazziniere', 'l.rossi',    '$2b$12$umblRIVsiFr62BCcVbGWm.ksTeb8EXfYSdNrp3rjlltx0WtdxlGpy', 'l.rossi@enotecaadriatica.it',    2);
 
 -- ===================== PAESI / REGIONI / PRODUTTORI / FORNITORI =====================
 

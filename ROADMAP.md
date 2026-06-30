@@ -25,8 +25,8 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do
 - [x] `02_seed.sql` — realistic sample data
 - [ ] `03_triggers.sql` — stock maintenance + non-graphical constraints   ← also Track A (sec. 5)
 - [ ] `04_views.sql` — per-role external schema                           ← also Track A (topic09)
-- [ ] App: project setup + DB connection (parameterized, injection-safe)  ← topic12
-- [ ] App: authentication (employee login, role in session)
+- [x] App: project setup + DB connection (parameterized, injection-safe)  ← topic12
+- [x] App: authentication (employee login, role in session)
 - [ ] App: per-role pages (warehouse / waiter / owner)
 - [ ] App: movement registration (load/sale -> stock moves live)
 - [ ] App: permissions demo (GRANT/REVOKE, real DB roles)                 ← topic09
