@@ -449,7 +449,8 @@ key remains protected by a `UNIQUE` constraint.
 
 | Entity | PK | Constraint / notes |
 |---|---|---|
-| Regione | id_regione | `UNIQUE(nome_paese)` |
+| Paese | id_paese | `UNIQUE(nome_paese)` (decomposed from Regione, see Sec. 11.2) |
+| Regione | id_regione | FK `id_paese`; `UNIQUE(id_paese, nome_regione)` |
 | Vitigno | id_vitigno | `UNIQUE(nome)` |
 | Dipendente | id_dipendente | `UNIQUE(matricola)` |
 | Cantina | id_cantina | FK `id_azienda`; opt. `UNIQUE(id_azienda, numero)` |
@@ -479,7 +480,8 @@ surrogate):
 - Azienda(**id_azienda**, ragione_sociale, p_iva, tipo, indirizzo_sede_principale, email, pec, telefono, titolare, sito_web, attivo)
 - Cantina(**id_cantina**, nome, indirizzo, tipo, id_azienda -> Azienda)
 - Dipendente(**id_dipendente**, matricola [U], nome, cognome, ruolo, username, password_hash, email, attivo, id_cantina -> Cantina)
-- Regione(**id_regione**, nome_paese [U], code_iso, nome_regione, zona)
+- Paese(**id_paese**, nome_paese [U], code_iso)
+- Regione(**id_regione**, nome_regione, zona, id_paese -> Paese) — UNIQUE(id_paese, nome_regione)
 - Produttore(**id_produttore**, nome, paese, sito_web, attivo)
 - Fornitore(**id_fornitore**, ragione_sociale, p_iva, is_cliente, is_fornitore, indirizzo, telefono, email, attivo)
 - Vitigno(**id_vitigno**, nome [U], sinonimo)
@@ -557,7 +559,7 @@ whole schema is in 1NF**.
 2NF concerns **only** the **partial** dependencies on a **composite** key (a
 non-key attribute depending on only part of the PK).
 
-- **17 entities with a simple PK** (surrogate `id_...`): a 1NF relation with a
+- **18 entities with a simple PK** (surrogate `id_...`): a 1NF relation with a
   simple PK is **automatically in 2NF**, because there is no "part" of the key on
   which an attribute could partially depend.
 - **5 tables with a composite PK** (N:M junctions and multivalued) — the only ones
@@ -574,6 +576,16 @@ non-key attribute depending on only part of the PK).
     non-key attribute) -> trivially in 2NF (and 3NF): there is no attribute that
     could depend partially or transitively on anything.
 
+**Paese/Regione decomposition (to preserve 2NF).** To represent several regions in
+the same country (e.g. Piemonte and Veneto in Italy) the natural key of a merged
+`Regione` would be `(nome_paese, nome_regione)`. But `code_iso` depends **only** on
+`nome_paese` — a *part* of the key -> **partial dependency**, a 2NF violation (the
+ISO code is a property of the Country, not of the region). To avoid it we
+**decompose** into `Paese(`**nome_paese**`, code_iso)` and
+`Regione(`**nome_regione**`, zona, -> Paese)`: this way in `Paese` `code_iso`
+depends on the whole key and `Regione` no longer holds attributes of the Country
+-> both in 2NF.
+
 -> **the whole schema is in 2NF**.
 
 ### 11.3 Third normal form (3NF)
@@ -583,7 +595,7 @@ and **computed columns**. Conducted on natural keys, the schema is in **3NF by
 construction**: each table describes a single entity or association and its
 attributes describe the key directly. The few functional dependencies among
 natural attributes have a **candidate key as determinant** and therefore do not
-violate 3NF — for example in `Regione` the FD `nome_paese -> code_iso` (the ISO
+violate 3NF — for example in `Paese` the FD `nome_paese -> code_iso` (the ISO
 code is determined by the country) has `nome_paese` as determinant, which is a
 candidate key (`UNIQUE`).
 
@@ -624,5 +636,5 @@ and **documented**. The course slides stop at 3NF: BCNF is not considered.
 | Normal form | Outcome | Detail |
 |---|---|---|
 | **1NF** | satisfied by the whole schema | atomic columns; multivalued already removed in Sec. 9.2 (hops/malts/ingredients -> dedicated tables) |
-| **2NF** | satisfied by the whole schema | 17 entities with simple PK -> automatic; 5 with composite PK verified (full dependency on `Composto`/`Contiene_voce`; 3 all-key trivial) |
+| **2NF** | satisfied by the whole schema | 18 entities with simple PK -> automatic; 5 with composite PK verified (full dependency on `Composto`/`Contiene_voce`; 3 all-key trivial); `Regione` decomposed into `Paese`+`Regione` to avoid the partial dependency of `code_iso` |
 | **3NF** | satisfied except 2 deliberate choices | knowing violations: `giacenza` (computed column) and `Movimenti.id_cantina` (transitive via employee), motivated in Sec. 8/8.1 and maintained by the triggers |
