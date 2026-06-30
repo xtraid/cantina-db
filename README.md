@@ -61,7 +61,7 @@ cantina-db/
 │   ├── 01_schema.sql      # DDL: tables, constraints, indexes
 │   ├── 02_seed.sql        # realistic sample data
 │   ├── 03_triggers.sql    # (wip) stock maintenance, non-graphical constraints
-│   └── 04_views.sql       # (wip) per-role views
+│   └── 04_views.sql       # per-role views (warehouse done; owner/waiter wip)
 ├── app/                   # (wip) Streamlit application
 ├── docs/
 │   ├── progettazione.md   # design document (requirements -> logical -> 3NF)
@@ -82,7 +82,9 @@ mariadb -u <user> -p cantina < sql/02_seed.sql
 
 ## Status
 
-🚧 Work in progress — schema complete and validated; triggers, views and app on the way.
+🚧 Work in progress — schema complete and validated; login + warehouse view/page
+live (read-only stock); triggers, remaining per-role views and the movement screen
+on the way.
 
 ---
 
@@ -125,4 +127,6 @@ Schema E-R completo e scelte di progetto in
 
 ### Stato
 
-🚧 In sviluppo — schema completo e validato; trigger, viste e app in arrivo.
+🚧 In sviluppo — schema completo e validato; login + vista/pagina magazziniere
+attive (giacenze in sola lettura); trigger, viste rimanenti e schermata movimenti
+in arrivo.

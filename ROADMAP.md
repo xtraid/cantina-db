@@ -24,10 +24,10 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do
 - [x] `01_schema.sql` — DDL, validated on MariaDB
 - [x] `02_seed.sql` — realistic sample data
 - [ ] `03_triggers.sql` — stock maintenance + non-graphical constraints   ← also Track A (sec. 5)
-- [ ] `04_views.sql` — per-role external schema                           ← also Track A (topic09)
+- [~] `04_views.sql` — per-role external schema (warehouse view done; owner/waiter pending)  ← also Track A (topic09)
 - [x] App: project setup + DB connection (parameterized, injection-safe)  ← topic12
 - [x] App: authentication (employee login, role in session)
-- [~] App: per-role pages (warehouse / waiter / owner)  — routing skeleton done, content next
+- [~] App: per-role pages (warehouse / waiter / owner)  — warehouse page reads its view; waiter/owner next
 - [ ] App: movement registration (load/sale -> stock moves live)
 - [ ] App: permissions demo (GRANT/REVOKE, real DB roles)                 ← topic09
 - [ ] README polish — app screenshot / short gif
@@ -49,5 +49,6 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do
 
 ## Current focus
 
-Track B → **frontend**: start from the design-stable foundation (project setup +
-DB connection + login), then slot the trigger in right before the movement screen.
+Track B → **frontend**: warehouse view + page are live (read-only stock). Next:
+`03_triggers.sql` (stock maintenance), then the movement screen (load/sale) that
+depends on it, and the remaining per-role views/pages (owner, waiter).

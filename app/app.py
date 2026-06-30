@@ -28,8 +28,9 @@ def owner_page(u):
 
 
 def store_page(u):
-    st.header("Store")
-    st.write("placeholder: inventory, movements registration")
+    st.header("Magazzino - giacenze")
+    rows = run_query("SELECT * FROM v_giacenze_magazziniere")
+    st.dataframe(rows)
 
 
 def waiter_page(u):
