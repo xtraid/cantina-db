@@ -24,7 +24,8 @@ def log_in(username, password):
 
 def owner_page(u):
     st.header("Owner's dashboard")
-    st.write("placeholder: Cellar summary, sales, employee manager")
+    rows = run_query("SELECT * FROM v_giacenze_titolare")
+    st.dataframe(rows)
 
 
 def store_page(u):
@@ -35,7 +36,8 @@ def store_page(u):
 
 def waiter_page(u):
     st.header("Wine sheet")
-    st.write("placeholder: wine sheet and sells registration")
+    rows = run_query("SELECT * FROM v_carta_vini_cameriere")
+    st.dataframe(rows)
 
 
 if "user" not in st.session_state:
