@@ -59,12 +59,13 @@ Full E-R schema and design rationale in
 cantina-db/
 ├── sql/
 │   ├── 01_schema.sql      # DDL: tables, constraints, indexes
-│   ├── 02_seed.sql        # realistic sample data
-│   ├── 03_triggers.sql    # (wip) stock maintenance, non-graphical constraints
-│   └── 04_views.sql       # per-role views (warehouse done; owner/waiter wip)
-├── app/                   # (wip) Streamlit application
+│   ├── 02_triggers.sql    # stock maintenance (follow_up) + oversell guard
+│   ├── 03_seed.sql        # realistic sample data (stock derived via triggers)
+│   └── 04_views.sql       # per-role views (warehouse / owner / waiter)
+├── app/                   # Streamlit application (login + one page per role)
 ├── docs/
-│   ├── progettazione.md   # design document (requirements -> logical -> 3NF)
+│   ├── progettazione.md   # design document IT (requirements -> logical -> 3NF -> physical -> triggers)
+│   ├── progettazione.en.md# design document EN
 │   └── er.svg / er.png    # E-R schema
 └── README.md
 ```
@@ -75,16 +76,24 @@ cantina-db/
 # 1. create the database (as root)
 sudo mariadb -e "CREATE DATABASE cantina CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
 
-# 2. load schema + sample data
+# 2. load the SQL files in numeric order
 mariadb -u <user> -p cantina < sql/01_schema.sql
-mariadb -u <user> -p cantina < sql/02_seed.sql
+mariadb -u <user> -p cantina < sql/02_triggers.sql
+mariadb -u <user> -p cantina < sql/03_seed.sql
+mariadb -u <user> -p cantina < sql/04_views.sql
 ```
+
+> ℹ️ The numeric order is significant: triggers (`02`) load **before** the seed
+> (`03`) because stock (`giacenza`) is not hardcoded — it starts at 0 and is built
+> up by the `follow_up` trigger as the seed inserts the movements.
 
 ## Status
 
-🚧 Work in progress — schema complete and validated; login + warehouse view/page
-live (read-only stock); triggers, remaining per-role views and the movement screen
-on the way.
+🚧 Work in progress — schema, triggers and all three per-role views complete and
+validated on MariaDB; the Streamlit app has employee login and a read-only page per
+role (owner / warehouse / waiter). Still to come: the movement-registration screen
+(load/sale), the GRANT/REVOKE role demo, and the remaining trigger-based constraints
+(docs Sec. 13.2).
 
 ---
 
@@ -127,6 +136,12 @@ Schema E-R completo e scelte di progetto in
 
 ### Stato
 
-🚧 In sviluppo — schema completo e validato; login + vista/pagina magazziniere
-attive (giacenze in sola lettura); trigger, viste rimanenti e schermata movimenti
-in arrivo.
+🚧 In sviluppo — schema, trigger e tutte e tre le viste per ruolo completi e
+validati su MariaDB; l'app Streamlit ha il login dipendente e una pagina in sola
+lettura per ruolo (titolare / magazziniere / cameriere). Ancora da fare: la
+schermata di registrazione movimenti (carico/vendita), la demo dei permessi
+GRANT/REVOKE e i vincoli via trigger rimanenti (documento Sez. 13.2).
+
+> ℹ️ L'ordine numerico è significativo: i trigger (`02`) si caricano **prima** del
+> seed (`03`) perché la giacenza non è scritta a mano — parte da 0 e viene costruita
+> dal trigger `follow_up` man mano che il seed inserisce i movimenti.

@@ -1,11 +1,13 @@
 -- ============================================================
 --  Dati di esempio (seed) - cantina
---  Carica DOPO 01_schema.sql. Dati realistici ma inventati.
+--  Carica DOPO 01_schema.sql E 02_triggers.sql (i trigger devono
+--  gia' esistere: la giacenza e' derivata dai movimenti qui sotto).
+--  Dati realistici ma inventati.
 --  ID espliciti per rendere deterministici i riferimenti FK.
 --
 --  NB: la giacenza su `listino` NON e' impostata qui esplicitamente:
 --      parte dal DEFAULT 0 ed e' derivata automaticamente dai
---      movimenti tramite i trigger (03_triggers.sql). Ogni riga di
+--      movimenti tramite i trigger (02_triggers.sql). Ogni riga di
 --      listino deve avere movimenti ACQUISTO/CARICO coerenti con la
 --      giacenza iniziale voluta.
 -- ============================================================

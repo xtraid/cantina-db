@@ -698,7 +698,7 @@ CREATE TRIGGER follow_up AFTER INSERT
 DELIMITER ;
 ```
 
-Come conseguenza, in `02_seed.sql` la giacenza non è più assegnata esplicitamente in
+Come conseguenza, in `03_seed.sql` la giacenza non è più assegnata esplicitamente in
 `Listino`: parte dal `DEFAULT 0` ed è interamente derivata dai movimenti caricati nello stesso
 file, tramite `follow_up` — coerenza fra dati di seed e logica applicativa verificata
 direttamente sul DB (valori attesi 40/5/20/12/30/96/8 confermati per le 7 righe di `Listino`).

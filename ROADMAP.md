@@ -15,19 +15,20 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do
 - [x] Logical design — relational schema, FK/constraints
 - [x] Normalization — 1NF/2NF/3NF verified; deliberate denormalizations documented
 - [x] Normalization refinement — Paese/Regione decomposition (2NF)
-- [ ] **Physical design** — indexes, storage (course topic15) · *scheduled, next days*
+- [x] **Physical design** — load-justified secondary index on `movimenti` (topic15); documented in Sec. 12
+- [x] Procedural constraints — `oversell` + `follow_up` triggers (Sec. 13); row-level CHECKs already in schema
 - [ ] Example queries (joins, aggregations, subqueries)
 - [ ] (optional) demo application  ← **Track B**
 
 ## Track B — Demo app (this repo)
 
 - [x] `01_schema.sql` — DDL, validated on MariaDB
-- [x] `02_seed.sql` — realistic sample data
-- [ ] `03_triggers.sql` — stock maintenance + non-graphical constraints   ← also Track A (sec. 5)
-- [~] `04_views.sql` — per-role external schema (warehouse view done; owner/waiter pending)  ← also Track A (topic09)
+- [x] `02_triggers.sql` — stock maintenance (`follow_up`) + oversell guard   ← also Track A (sec. 5/13)
+- [x] `03_seed.sql` — realistic sample data (stock derived via triggers)
+- [x] `04_views.sql` — per-role external schema (warehouse / owner / waiter)  ← also Track A (topic09)
 - [x] App: project setup + DB connection (parameterized, injection-safe)  ← topic12
 - [x] App: authentication (employee login, role in session)
-- [~] App: per-role pages (warehouse / waiter / owner)  — warehouse page reads its view; waiter/owner next
+- [x] App: per-role pages (warehouse / waiter / owner) — each reads its own view
 - [ ] App: movement registration (load/sale -> stock moves live)
 - [ ] App: permissions demo (GRANT/REVOKE, real DB roles)                 ← topic09
 - [ ] README polish — app screenshot / short gif
@@ -41,7 +42,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do
    change the tables/columns the app queries. So Track B can proceed in parallel.
 2. **Trigger before the movement screen.** The "register a movement -> stock
    updates / oversell is blocked" demo is the core mechanic; it needs
-   `03_triggers.sql` in place.
+   `02_triggers.sql` in place.
 3. **Views before per-role pages.** Each role reads the DB through its own view.
 4. Building the app naturally produces the optional "demo application" of Track A
    and exercises course topics 09 (views/permissions), 11 (triggers), 12 (app
@@ -49,6 +50,8 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do
 
 ## Current focus
 
-Track B → **frontend**: warehouse view + page are live (read-only stock). Next:
-`03_triggers.sql` (stock maintenance), then the movement screen (load/sale) that
-depends on it, and the remaining per-role views/pages (owner, waiter).
+Triggers, all per-role views and all per-role pages are done and validated. Next
+up on Track B: the **movement-registration screen** (load/sale → stock moves live
+via the triggers), then the GRANT/REVOKE permissions demo. Known limitation: the
+role views expose every cellar's rows (column-scoped, not row-scoped by cantina) —
+per-cantina filtering is future work.

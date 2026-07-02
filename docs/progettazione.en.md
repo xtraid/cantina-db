@@ -792,7 +792,7 @@ CREATE TRIGGER follow_up AFTER INSERT
 DELIMITER ;
 ```
 
-As a consequence, in `02_seed.sql` stock is no longer explicitly assigned in
+As a consequence, in `03_seed.sql` stock is no longer explicitly assigned in
 `Listino`: it starts from `DEFAULT 0` and is entirely derived from the
 movements loaded in the same file, via `follow_up` — consistency between seed
 data and application logic verified directly on the DB (expected values
