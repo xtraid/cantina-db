@@ -352,7 +352,7 @@ CREATE INDEX idx_regione_paese         ON regione(id_paese);
 CREATE INDEX idx_bevanda_regione       ON bevanda(id_regione);
 CREATE INDEX idx_movimenti_bevanda     ON movimenti(id_bevanda);
 CREATE INDEX idx_movimenti_dipendente  ON movimenti(id_dipendente);
-CREATE INDEX idx_movimenti_cantina     ON movimenti(id_cantina);
+CREATE INDEX idx_movimenti_cantina_data ON movimenti(id_cantina, data_ora);
 CREATE INDEX idx_movimenti_fornitore   ON movimenti(id_fornitore);
 CREATE INDEX idx_listino_bevanda       ON listino(id_bevanda);
 CREATE INDEX idx_listino_cantina       ON listino(id_cantina);

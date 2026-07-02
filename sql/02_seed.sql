@@ -3,10 +3,11 @@
 --  Carica DOPO 01_schema.sql. Dati realistici ma inventati.
 --  ID espliciti per rendere deterministici i riferimenti FK.
 --
---  NB: la giacenza su `listino` e' impostata qui esplicitamente
---      perche' il trigger di mantenimento (03_triggers.sql) non
---      e' ancora installato. Una volta attivo, sara' derivata
---      automaticamente dai movimenti.
+--  NB: la giacenza su `listino` NON e' impostata qui esplicitamente:
+--      parte dal DEFAULT 0 ed e' derivata automaticamente dai
+--      movimenti tramite i trigger (03_triggers.sql). Ogni riga di
+--      listino deve avere movimenti ACQUISTO/CARICO coerenti con la
+--      giacenza iniziale voluta.
 -- ============================================================
 
 -- pulizia dati (ordine inverso alle FK)
@@ -128,26 +129,33 @@ INSERT INTO affinamento (id_affinamento, durata_legno_mesi, durata_bottiglia_mes
 
 -- ===================== LISTINO (per cantina) =====================
 -- Stessa bevanda in cantine diverse = righe diverse, prezzi/giacenze diversi.
--- giacenza impostata a mano (trigger non ancora attivo).
+-- giacenza non specificata: parte da DEFAULT 0, la derivano i trigger
+-- a partire dai movimenti inseriti sotto.
 
-INSERT INTO listino (id_listino, id_bevanda, id_cantina, prezzo_vendita, prezzo_acquisto, iva, giacenza) VALUES
-(1, 1, 1, 45.00, 30.00, 22.0, 40),   -- Barolo @ Trieste
-(2, 1, 2, 52.00, 30.00, 22.0,  5),   -- Barolo @ Milano (stesso vino, prezzo/giacenza diversi)
-(3, 2, 1, 38.00, 25.00, 22.0, 20),   -- Barbaresco @ Trieste
-(4, 3, 1, 60.00, 40.00, 22.0, 12),   -- Bordeaux @ Trieste
-(5, 4, 2, 28.00, 18.00, 22.0, 30),   -- Rioja @ Milano
-(6, 5, 1,  6.00,  3.00, 22.0, 96),   -- IPA @ Trieste
-(7, 6, 2, 75.00, 50.00, 22.0,  8);   -- Whisky @ Milano
+INSERT INTO listino (id_listino, id_bevanda, id_cantina, prezzo_vendita, prezzo_acquisto, iva ) VALUES
+(1, 1, 1, 45.00, 30.00, 22.0 ),   -- Barolo @ Trieste
+(2, 1, 2, 52.00, 30.00, 22.0 ),   -- Barolo @ Milano (stesso vino, prezzo/giacenza diversi)
+(3, 2, 1, 38.00, 25.00, 22.0 ),   -- Barbaresco @ Trieste
+(4, 3, 1, 60.00, 40.00, 22.0 ),   -- Bordeaux @ Trieste
+(5, 4, 2, 28.00, 18.00, 22.0 ),   -- Rioja @ Milano
+(6, 5, 1,  6.00,  3.00, 22.0 ),   -- IPA @ Trieste
+(7, 6, 2, 75.00, 50.00, 22.0 );   -- Whisky @ Milano
 
 -- ===================== MOVIMENTI =====================
--- Coerenti con le giacenze sopra (dove presenti).
+-- Fonte di verita' per la giacenza: ogni riga di listino ha qui
+-- almeno un ACQUISTO/CARICO che, via trigger, produce la giacenza
+-- iniziale voluta per la demo.
 
 INSERT INTO movimenti (id_movimento, tipo, quantita_bottiglie, prezzo_unitario, id_bevanda, id_dipendente, id_cantina, id_fornitore) VALUES
 (1, 'ACQUISTO', 40, 30.00, 1, 2, 1, 1),   -- carico Barolo @ Trieste (40)
 (2, 'ACQUISTO', 10, 30.00, 1, 4, 2, 1),   -- carico Barolo @ Milano (10)
 (3, 'VENDITA',   5, 52.00, 1, 4, 2, NULL),-- vendita 5 Barolo @ Milano -> giacenza 5
 (4, 'ACQUISTO', 24,  3.00, 5, 2, 1, 1),   -- carico IPA @ Trieste (24)
-(5, 'ACQUISTO', 72,  3.00, 5, 2, 1, 1);   -- altro carico IPA @ Trieste -> 96
+(5, 'ACQUISTO', 72,  3.00, 5, 2, 1, 1),   -- altro carico IPA @ Trieste -> 96
+(6, 'ACQUISTO', 20, 25.00, 2, 2, 1, 1),   -- carico Barbaresco @ Trieste -> 20
+(7, 'ACQUISTO', 12, 40.00, 3, 2, 1, 1),   -- carico Bordeaux @ Trieste -> 12
+(8, 'ACQUISTO', 30, 18.00, 4, 4, 2, 1),   -- carico Rioja @ Milano -> 30
+(9, 'ACQUISTO',  8, 50.00, 6, 4, 2, 1);   -- carico Whisky @ Milano -> 8
 
 -- ===================== CARTA VINI =====================
 
