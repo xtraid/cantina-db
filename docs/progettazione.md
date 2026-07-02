@@ -1,6 +1,4 @@
-# Progettazione concettuale e logica
-
-> 🇬🇧 English version: [`progettazione.en.md`](progettazione.en.md)
+# MyProject — Progettazione concettuale
 
 Gestionale per la gestione di cantine e dello stoccaggio di bevande.
 
@@ -248,13 +246,27 @@ cantine per azienda ~1-5; dipendenti per cantina ~5-30; bevande nel catalogo glo
 
 ### 7.2 Tavola delle operazioni
 
+> La tavola copre le operazioni di **servizio e reportistica** (il carico applicativo che
+> guida le decisioni di ridondanza/indici, Sez. 8/12). Le operazioni di **amministrazione**
+> (onboarding di azienda/dipendenti) sono per natura rarissime e non impattano quelle
+> decisioni — sono comunque elencate (O6) per completezza, dato che altrimenti `Azienda`
+> resterebbe una tabella toccata da nessuna operazione.
+
 | # | Operazione | Tipo (I/B) | Frequenza (per cantina) |
 |---|---|---|---|
-| O1 | Registra un movimento (carico/scarico/vendita) | I | ~50 / serata |
+| O1a | Registra un **carico** (consegna da fornitore) — *gestione* | I | ~1-3 / settimana (evento, spesso multi-bottiglia) |
+| O1b | Registra uno **scarico/vendita** — *servizio* | I | ~50 / serata |
 | O2 | Consulta la giacenza di una bevanda | I | ~50 / serata |
 | O3 | Visualizza / stampa una carta vini | I | ~10-30 / serata |
 | O4 | Inserisci una nuova bevanda a catalogo | I | ~1-5 / settimana |
 | O5 | Report forniture / movimenti del mese | B | ~2 / mese |
+| O6 | Registra una nuova azienda cliente / dipendente — *amministrazione* | I | ~1 / anno (azienda), poche / anno (dipendenti) — non rilevante per il carico |
+
+> **Nota:** O1a e O1b insieme costituiscono l'operazione "registra movimento" usata
+> aggregata in Sez. 8 (l'analisi costo/beneficio della giacenza si applica a *qualunque*
+> inserimento in `Movimenti`, a prescindere dal tipo — sia un carico che uno scarico
+> aggiornano la giacenza). La frequenza aggregata usata in Sez. 8 (~50/serata) resta valida
+> come stima dell'insieme: O1a ne è una piccola minoranza, O1b la maggioranza.
 
 ---
 
@@ -267,9 +279,10 @@ su **Listino**. Si valuta se **memorizzarla** come colonna su Listino (mantenuta
 trigger) oppure **ricalcolarla al volo** dai movimenti a ogni consultazione.
 
 **Periodo di riferimento:** una serata di servizio, una singola cantina. Frequenze
-(dalla tavola operazioni): O2 *consulta giacenza* ~50/serata; O1 *registra movimento*
-~50/serata (un movimento per bottiglia, tracciabilità per-bottiglia). Convenzione:
-una **scrittura** conta **doppio** (lettura del blocco + riscrittura).
+(dalla tavola operazioni): O2 *consulta giacenza* ~50/serata; O1a+O1b *registra movimento*
+(carico+scarico/vendita aggregati) ~50/serata (un movimento per bottiglia, tracciabilità
+per-bottiglia). Convenzione: una **scrittura** conta **doppio** (lettura del blocco +
+riscrittura).
 
 `M` = numero di movimenti già accumulati in archivio per quella bevanda in quella
 cantina (cresce nel tempo: i movimenti non si cancellano).
@@ -277,7 +290,7 @@ cantina (cresce nel tempo: i movimenti non si cancellano).
 | Operazione | A) giacenza memorizzata (su Listino) | B) giacenza derivata dai movimenti |
 |---|---|---|
 | O2 — consulta giacenza (×50) | legge 1 riga Listino = 1 L → **50** | somma gli M movimenti = M L → **50·M** |
-| O1 — registra movimento (×50) | scrivi mov (1 S) + leggi giacenza (1 L) + aggiorna giacenza (1 S) = 5 → **250** | scrivi mov (1 S) = 2 → **100** |
+| O1a/O1b — registra movimento (×50, aggregato) | scrivi mov (1 S) + leggi giacenza (1 L) + aggiorna giacenza (1 S) = 5 → **250** | scrivi mov (1 S) = 2 → **100** |
 | **Totale accessi / serata** | **300** (stabile) | **50·M + 100** (cresce con M) |
 
 **Punto di pareggio:** B conviene solo se `50·M + 100 < 300`, cioè `M < 4`. La derivazione
@@ -384,8 +397,7 @@ violazioni. Di conseguenza ogni chiave naturale resta protetta da un vincolo `UN
 
 | Entità | PK | Vincolo / note |
 |---|---|---|
-| Paese | id_paese | `UNIQUE(nome_paese)` (decomposto da Regione, vedi Sez. 11.2) |
-| Regione | id_regione | FK `id_paese`; `UNIQUE(id_paese, nome_regione)` |
+| Regione | id_regione | `UNIQUE(nome_paese)` |
 | Vitigno | id_vitigno | `UNIQUE(nome)` |
 | Dipendente | id_dipendente | `UNIQUE(matricola)` |
 | Cantina | id_cantina | FK `id_azienda`; opz. `UNIQUE(id_azienda, numero)` |
@@ -412,8 +424,7 @@ dalle FK coinvolte (è già univoca e significativa, evita un surrogato inutile)
 - Azienda(**id_azienda**, ragione_sociale, p_iva, tipo, indirizzo_sede_principale, email, pec, telefono, titolare, sito_web, attivo)
 - Cantina(**id_cantina**, nome, indirizzo, tipo, id_azienda -> Azienda)
 - Dipendente(**id_dipendente**, matricola [U], nome, cognome, ruolo, username, password_hash, email, attivo, id_cantina -> Cantina)
-- Paese(**id_paese**, nome_paese [U], code_iso)
-- Regione(**id_regione**, nome_regione, zona, id_paese -> Paese) — UNIQUE(id_paese, nome_regione)
+- Regione(**id_regione**, nome_paese [U], code_iso, nome_regione, zona)
 - Produttore(**id_produttore**, nome, paese, sito_web, attivo)
 - Fornitore(**id_fornitore**, ragione_sociale, p_iva, is_cliente, is_fornitore, indirizzo, telefono, email, attivo)
 - Vitigno(**id_vitigno**, nome [U], sinonimo)
@@ -489,7 +500,7 @@ schema è in 1NF**.
 La 2NF riguarda **solo** le dipendenze **parziali** da una chiave **composta** (un attributo
 non-chiave che dipende da una sola parte della PK).
 
-- **18 entità a PK semplice** (surrogato `id_…`): una relazione in 1NF con PK semplice è
+- **17 entità a PK semplice** (surrogato `id_…`): una relazione in 1NF con PK semplice è
   **automaticamente in 2NF**, perché non esiste "una parte" della chiave da cui un attributo
   possa dipendere parzialmente.
 - **5 tabelle a PK composta** (junction N:M e multivalore) — le uniche da verificare:
@@ -504,15 +515,6 @@ non-chiave che dipende da una sola parte della PK).
     non-chiave) -> banalmente in 2NF (e 3NF): non esiste attributo che possa dipendere in
     modo parziale o transitivo da alcunché.
 
-**Decomposizione Paese/Regione (per preservare la 2NF).** Per rappresentare più
-regioni nello stesso Paese (es. Piemonte e Veneto in Italia) la chiave naturale di
-una `Regione` accorpata sarebbe `(nome_paese, nome_regione)`. Ma `code_iso` dipende
-**solo** da `nome_paese` — una *parte* della chiave -> **dipendenza parziale**, una
-violazione di 2NF (il codice ISO è proprietà del Paese, non della regione). Per
-evitarla si **decompone** in `Paese(`**nome_paese**`, code_iso)` e
-`Regione(`**nome_regione**`, zona, -> Paese)`: così in `Paese` `code_iso` dipende
-dall'intera chiave e `Regione` non contiene più attributi del Paese -> entrambe in 2NF.
-
 -> **tutto lo schema è in 2NF**.
 
 ### 11.3 Terza forma normale (3NF)
@@ -522,7 +524,7 @@ La 3NF vieta le **dipendenze transitive** fra attributi non-chiave (`A -> B -> C
 costruzione**: ogni tabella descrive una sola entità o associazione e i suoi attributi
 descrivono direttamente la chiave. Le poche dipendenze funzionali fra attributi naturali
 hanno come **determinante una chiave candidata** e quindi non violano la 3NF — per esempio
-in `Paese` la FD `nome_paese -> code_iso` (il codice ISO è determinato dal paese) ha per
+in `Regione` la FD `nome_paese -> code_iso` (il codice ISO è determinato dal paese) ha per
 determinante `nome_paese`, che è chiave candidata (`UNIQUE`).
 
 Inoltre, gli attributi derivabili che **non vengono memorizzati** (prezzo IVA-incluso di una
@@ -561,5 +563,172 @@ considerata.
 | Forma normale | Esito | Dettaglio |
 |---|---|---|
 | **1NF** | rispettata da tutto lo schema | colonne atomiche; multivalore già eliminati in Sez. 9.2 (luppoli/malti/ingredienti -> tabelle dedicate) |
-| **2NF** | rispettata da tutto lo schema | 18 entità a PK semplice -> automatico; 5 a PK composta verificate; `Regione` decomposta in `Paese`+`Regione` per evitare la dipendenza parziale di `code_iso` |
+| **2NF** | rispettata da tutto lo schema | 17 entità a PK semplice -> automatico; 5 a PK composta verificate (dipendenza piena su `Composto`/`Contiene_voce`; 3 all-key banali) |
 | **3NF** | rispettata salvo 2 scelte deliberate | violazioni consapevoli: `giacenza` (colonna calcolata) e `Movimenti.id_cantina` (transitiva via dipendente), motivate in Sez. 8/8.1 e mantenute dai trigger |
+
+---
+
+## 12. Progettazione fisica
+
+> Input di questa sezione: lo schema logico (Sez. 10, già frozen) e il **carico applicativo**
+> (Sez. 7 — tavola dei volumi e delle operazioni). Nei RDBMS relazionali la progettazione
+> fisica si riduce in pratica alla **scelta degli indici**: il motore (MariaDB/InnoDB) usa
+> già un B-tree come struttura primaria (ogni tabella è fisicamente organizzata attorno alla
+> propria PK — l'accesso per PK non richiede indici aggiuntivi), quindi qui si motivano solo
+> gli **indici secondari**.
+
+**Indici di base (già presenti in `01_schema.sql`).** Ogni foreign key coinvolta in join
+frequenti (Sez. 10) è indicizzata — pratica raccomandata perché le FK sono quasi sempre
+usate in condizioni di join o filtro. Questo copre già, senza bisogno di ragionamento
+aggiuntivo, O1a/O1b-O4 sulle tabelle di dimensione medio-piccola (`listino`, `carta_vini`,
+`bevanda`, ecc.).
+
+**Caso analizzato: `Movimenti` e il report mensile (O5).** `Movimenti` è, per costruzione
+(Sez. 7.1), la tabella dominante del sistema: cresce senza mai eliminare righe (10^7-10^8
+istanze attese). L'operazione O5 ("report forniture/movimenti del mese", batch, ~2/mese per
+cantina) filtra tipicamente per **cantina** e per **intervallo di date** — ma `data_ora` non
+era coperta da nessun indice, solo le FK (`id_bevanda`, `id_dipendente`, `id_cantina`,
+`id_fornitore`) lo erano. Senza indice su `data_ora`, ogni O5 degenererebbe in una scansione
+completa della tabella più grande del database.
+
+*Analisi costo/beneficio (stesso metodo della Sez. 8):* O1a+O1b (registra movimento,
+aggregato) sono molto più frequenti di O5 (~50/serata contro ~2/mese), ma la frequenza da
+sola non decide — conta il **costo per operazione**. Un indice B-tree costa, a ogni INSERT,
+un aggiornamento **O(log n)** (poche pagine extra), mentre l'assenza di indice costa, a ogni
+O5, uno **scan completo** della tabella dominante. Il piccolo sovraccarico ripetuto su
+O1a/O1b è trascurabile rispetto allo scan enorme evitato su O5 → l'indice conviene nonostante
+O1a/O1b dominino in frequenza.
+
+*Scelta implementata:* un indice **composto** `(id_cantina, data_ora)` invece di uno singolo
+su `data_ora`, perché O5 filtra tipicamente per cantina **e** per data insieme, e per la
+regola del **prefisso sinistro** (leftmost prefix) un indice composto serve automaticamente
+anche le query che filtrano solo su `id_cantina`. Questo ha reso **ridondante** il precedente
+indice singolo `idx_movimenti_cantina` (stesso prefisso, nessun beneficio aggiuntivo,
+solo costo extra in scrittura e spazio) → **rimosso** e sostituito da
+`idx_movimenti_cantina_data`:
+
+```sql
+CREATE INDEX idx_movimenti_cantina_data ON movimenti(id_cantina, data_ora);
+```
+
+**Perché non altri indici.** Coerentemente col principio "un indice accelera le letture ma
+rallenta le scritture e occupa spazio" (non si indicizza tutto), non si aggiungono indici
+oltre a questo: la giacenza (O2) è già coperta dal vincolo `UNIQUE(id_cantina, id_bevanda)`
+su `Listino` (che è di fatto un indice); la consultazione della carta vini (O3) è già coperta
+dalla PK composta `(id_carta_vini, id_listino)` di `Contiene_voce`, il cui prefisso sinistro
+serve esattamente il pattern "tutte le voci di una carta"; le tabelle anagrafiche
+(`produttore`, `fornitore`, ecc.) hanno volumi e frequenze di scrittura/lettura troppo bassi
+per giustificare indici oltre alle FK già presenti.
+
+### 12.1 Riepilogo indici secondari
+
+| Indice | Tabella | Colonne | Operazione che lo giustifica |
+|---|---|---|---|
+| `idx_movimenti_cantina_data` | Movimenti | `(id_cantina, data_ora)` | O5 — report mensile per cantina; copre anche i filtri solo-cantina (leftmost prefix) |
+| `idx_movimenti_bevanda` | Movimenti | `id_bevanda` | join/filtro per bevanda (calcolo giacenza, trigger) |
+| `idx_movimenti_dipendente` | Movimenti | `id_dipendente` | O1a/O1b — join su `Registra` |
+| `idx_movimenti_fornitore` | Movimenti | `id_fornitore` | O5 — report forniture |
+| `uq_listino_bevanda_cantina` (UNIQUE) | Listino | `(id_cantina, id_bevanda)` | O2 — consulta giacenza, accesso puntuale |
+| PK composta `Contiene_voce` | Carta_vini_voce | `(id_carta_vini, id_listino)` | O3 — visualizza carta vini, ordinata per voce |
+
+---
+
+## 13. Vincoli procedurali (trigger)
+
+> Input di questa sezione: i vincoli non esprimibili graficamente elencati in Sez. 5. Un
+> **CHECK** in MariaDB è valutato a livello di **singola riga** (può confrontare solo colonne
+> della stessa riga in fase di inserimento/modifica); un vincolo che richiede di leggere
+> **altre righe** o **altre tabelle** — come nel primo gruppo di Sez. 5 (giacenza/movimenti) —
+> non è esprimibile con un CHECK e richiede un **trigger**.
+
+### 13.1 Trigger implementati
+
+**`oversell`** — `BEFORE INSERT ON movimenti`, `FOR EACH ROW`.
+
+Implementa il secondo vincolo del gruppo "Giacenza / movimenti" di Sez. 5 ("un movimento di
+scarico/vendita non può superare la giacenza attuale della bevanda"). Per i movimenti di tipo
+`SCARICO`/`VENDITA`, legge la giacenza corrente della coppia `(id_cantina, id_bevanda)` da
+`Listino` e, se insufficiente rispetto a `NEW.quantita_bottiglie`, solleva un errore
+applicativo (`SIGNAL SQLSTATE '45000'`) che impedisce l'inserimento del movimento:
+
+```sql
+DELIMITER $$
+CREATE TRIGGER oversell BEFORE INSERT
+  ON movimenti
+  FOR EACH ROW
+  BEGIN
+    IF NEW.tipo IN ('SCARICO','VENDITA') THEN
+      SELECT qr.giacenza INTO @giacenza FROM (SELECT l.giacenza FROM listino l
+      WHERE l.id_cantina = NEW.id_cantina AND l.id_bevanda = NEW.id_bevanda) as qr
+      ;
+      IF @giacenza < NEW.quantita_bottiglie THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Bottiglie insufficienti';
+      END IF;
+    END IF;
+  END$$
+DELIMITER ;
+```
+
+**`follow_up`** — `AFTER INSERT ON movimenti`, `FOR EACH ROW`.
+
+Implementa il primo e il terzo vincolo dello stesso gruppo ("la giacenza non può diventare
+negativa" — garantito a monte da `oversell` più il CHECK `chk_listino_giacenza` su `Listino`
+come rete di sicurezza — e "la giacenza deve restare coerente con la somma dei movimenti,
+aggiornata automaticamente"). Dopo l'inserimento di un movimento, aggiorna `Listino.giacenza`
+per la coppia `(id_cantina, id_bevanda)`: in aumento per `CARICO`/`ACQUISTO`, in diminuzione
+per `SCARICO`/`VENDITA`. Essendo `AFTER INSERT`, agisce solo su movimenti già validati da
+`oversell`:
+
+```sql
+DELIMITER $$
+CREATE TRIGGER follow_up AFTER INSERT
+  ON movimenti
+  FOR EACH ROW
+  BEGIN
+    IF NEW.tipo IN ('CARICO', 'ACQUISTO') THEN
+      UPDATE listino SET giacenza = giacenza + NEW.quantita_bottiglie
+      WHERE id_cantina = NEW.id_cantina AND id_bevanda = NEW.id_bevanda;
+    END IF;
+    IF NEW.tipo IN ('SCARICO', 'VENDITA') THEN
+      UPDATE listino SET giacenza = giacenza - NEW.quantita_bottiglie
+      WHERE id_cantina = NEW.id_cantina AND id_bevanda = NEW.id_bevanda;
+    END IF;
+  END$$
+DELIMITER ;
+```
+
+Come conseguenza, in `02_seed.sql` la giacenza non è più assegnata esplicitamente in
+`Listino`: parte dal `DEFAULT 0` ed è interamente derivata dai movimenti caricati nello stesso
+file, tramite `follow_up` — coerenza fra dati di seed e logica applicativa verificata
+direttamente sul DB (valori attesi 40/5/20/12/30/96/8 confermati per le 7 righe di `Listino`).
+
+*Verifica effettuata:* caricati entrambi i trigger sul DB reale; testato un inserimento di
+scarico eccedente la giacenza disponibile (bloccato correttamente da `oversell` con errore
+1644/45000) e un inserimento valido (accettato, con `Listino.giacenza` aggiornata
+correttamente da `follow_up`).
+
+> **Ambito: solo INSERT.** Entrambi i trigger sono su `INSERT`: `UPDATE` e `DELETE` su
+> `Movimenti` non ricalcolano la giacenza. Questo è coerente col disegno **append-only** dei
+> movimenti (Sez. 7.1: i movimenti non si cancellano, si accumulano e vengono archiviati
+> periodicamente): una correzione si registra come nuovo movimento di segno opposto, non
+> modificando o eliminando quelli esistenti. La giacenza resta quindi sempre coerente con la
+> somma dei movimenti.
+
+### 13.2 Altri vincoli di Sez. 5 — CHECK già presenti e trigger ancora da fare
+
+I vincoli di Sez. 5 esprimibili a livello di **singola riga** sono già implementati come
+`CHECK` in `01_schema.sql` (valutati dal motore a ogni inserimento/modifica). Restano da
+implementare solo i vincoli che richiedono di leggere **altre righe o altre tabelle**, per i
+quali serve un trigger (lavoro futuro):
+
+| Vincolo (Sez. 5) | Meccanismo | Motivazione | Stato |
+|---|---|---|---|
+| Prezzo di vendita ≥ prezzo di acquisto | CHECK | confronto fra colonne della stessa riga di `Listino` | ✅ fatto (`chk_listino_prezzo`) |
+| Movimento `ACQUISTO` richiede fornitore, altri tipi no | CHECK | confronto fra colonne della stessa riga di `Movimenti` | ✅ fatto (`chk_movimenti_acquisto`) |
+| Carta vini: `data_pubblicazione >= data_creazione`, `data_archiviazione >= data_pubblicazione` | CHECK | confronto fra colonne della stessa riga di `Carta_vini` | ✅ fatto (`chk_cartavini_date_pub`, `chk_cartavini_date_arch`) |
+| Coerenza generalizzazione (t,d): `categoria` coerente con la presenza in `vino`/`birra`/`analcolico`/`super_alcolico` | trigger | richiede di leggere le tabelle dei sottotipi, non solo la riga corrente | da fare |
+| Percentuali vitigni (`vino_vitigno.percentuale`) sommano a 100% | trigger | aggregato su più righe della stessa bevanda | da fare |
+| Coerenza di cantina fra carta vini e voci di listino | trigger | richiede di attraversare `Carta_vini_voce` → `Listino` per confrontare la cantina | da fare |
+
+---

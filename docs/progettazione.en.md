@@ -309,13 +309,27 @@ movements/day per cellar ~50; ~300 operating days/year.
 
 ### 7.2 Table of operations
 
+> The table covers **service and reporting** operations (the application load that
+> drives the redundancy/indexing decisions, Sec. 8/12). **Administrative** operations
+> (company/employee onboarding) are by nature very rare and do not impact those
+> decisions — they are listed anyway (O6) for completeness, since otherwise `Azienda`
+> would remain a table untouched by any operation.
+
 | # | Operation | Type (I/B) | Frequency (per cellar) |
 |---|---|---|---|
-| O1 | Record a movement (load/unload/sale) | I | ~50 / evening |
+| O1a | Record a **load** (delivery from supplier) — *management* | I | ~1-3 / week (event, often multi-bottle) |
+| O1b | Record an **unload/sale** — *service* | I | ~50 / evening |
 | O2 | Consult a beverage's stock | I | ~50 / evening |
 | O3 | View / print a wine list | I | ~10-30 / evening |
 | O4 | Insert a new beverage in the catalog | I | ~1-5 / week |
 | O5 | Supplies / movements report for the month | B | ~2 / month |
+| O6 | Register a new client company / employee — *administration* | I | ~1 / year (company), a few / year (employees) — not relevant to the load |
+
+> **Note:** O1a and O1b together make up the "record movement" operation used in
+> aggregate in Sec. 8 (the stock cost/benefit analysis applies to *any* insert into
+> `Movimenti`, regardless of type — both a load and an unload update the stock). The
+> aggregate frequency used in Sec. 8 (~50/evening) remains valid as an estimate of the
+> combined set: O1a is a small minority of it, O1b the majority.
 
 ---
 
@@ -328,9 +342,10 @@ catalog, stock is relative to the (beverage, cellar) pair: it therefore lives on
 by triggers) or **recompute it on the fly** from movements at every consultation.
 
 **Reference period:** one evening of service, a single cellar. Frequencies (from
-the operations table): O2 *consult stock* ~50/evening; O1 *record movement*
-~50/evening (one movement per bottle, per-bottle traceability). Convention: a
-**write** counts **double** (read the block + rewrite).
+the operations table): O2 *consult stock* ~50/evening; O1a+O1b *record movement*
+(load+unload/sale aggregated) ~50/evening (one movement per bottle, per-bottle
+traceability). Convention: a **write** counts **double** (read the block +
+rewrite).
 
 `M` = number of movements already accumulated in archive for that beverage in
 that cellar (grows over time: movements are not deleted).
@@ -338,7 +353,7 @@ that cellar (grows over time: movements are not deleted).
 | Operation | A) stored stock (on Listino) | B) stock derived from movements |
 |---|---|---|
 | O2 — consult stock (x50) | reads 1 Listino row = 1 R -> **50** | sums the M movements = M R -> **50*M** |
-| O1 — record movement (x50) | write mov (1 W) + read stock (1 R) + update stock (1 W) = 5 -> **250** | write mov (1 W) = 2 -> **100** |
+| O1a/O1b — record movement (x50, aggregated) | write mov (1 W) + read stock (1 R) + update stock (1 W) = 5 -> **250** | write mov (1 W) = 2 -> **100** |
 | **Total accesses / evening** | **300** (stable) | **50*M + 100** (grows with M) |
 
 **Break-even:** B is convenient only if `50*M + 100 < 300`, i.e. `M < 4`.
@@ -638,3 +653,177 @@ and **documented**. The course slides stop at 3NF: BCNF is not considered.
 | **1NF** | satisfied by the whole schema | atomic columns; multivalued already removed in Sec. 9.2 (hops/malts/ingredients -> dedicated tables) |
 | **2NF** | satisfied by the whole schema | 18 entities with simple PK -> automatic; 5 with composite PK verified (full dependency on `Composto`/`Contiene_voce`; 3 all-key trivial); `Regione` decomposed into `Paese`+`Regione` to avoid the partial dependency of `code_iso` |
 | **3NF** | satisfied except 2 deliberate choices | knowing violations: `giacenza` (computed column) and `Movimenti.id_cantina` (transitive via employee), motivated in Sec. 8/8.1 and maintained by the triggers |
+
+---
+
+## 12. Physical design
+
+> Input to this section: the logical schema (Sec. 10, already frozen) and the
+> **application load** (Sec. 7 — table of volumes and operations). In relational
+> RDBMSs, physical design in practice reduces to **index selection**: the engine
+> (MariaDB/InnoDB) already uses a B-tree as its primary structure (every table is
+> physically organized around its own PK — access by PK requires no extra index),
+> so here we only justify **secondary indexes**.
+
+**Base indexes (already present in `01_schema.sql`).** Every foreign key involved
+in frequent joins (Sec. 10) is indexed — recommended practice since FKs are
+almost always used in join or filter conditions. This already covers, with no
+further reasoning needed, O1a/O1b-O4 on the small/medium-sized tables
+(`listino`, `carta_vini`, `bevanda`, etc.).
+
+**Case analyzed: `Movimenti` and the monthly report (O5).** `Movimenti` is, by
+construction (Sec. 7.1), the dominant table of the system: it grows without ever
+deleting rows (10^7-10^8 expected instances). Operation O5 ("supplies/movements
+report for the month", batch, ~2/month per cellar) typically filters by
+**cellar** and by **date range** — but `data_ora` was not covered by any index,
+only the FKs (`id_bevanda`, `id_dipendente`, `id_cantina`, `id_fornitore`) were.
+Without an index on `data_ora`, every O5 would degenerate into a full scan of
+the largest table in the database.
+
+*Cost/benefit analysis (same method as Sec. 8):* O1a+O1b (record movement,
+aggregated) are much more frequent than O5 (~50/evening vs ~2/month), but
+frequency alone doesn't decide — what matters is the **cost per operation**. A
+B-tree index costs, on every INSERT, an **O(log n)** update (a few extra pages),
+while the absence of an index costs, on every O5, a **full scan** of the
+dominant table. The small repeated overhead on O1a/O1b is negligible compared
+to the huge scan avoided on O5 -> the index is worth it despite O1a/O1b
+dominating in frequency.
+
+*Chosen solution:* a **composite** index `(id_cantina, data_ora)` instead of a
+single one on `data_ora`, because O5 typically filters by cellar **and** by date
+together, and by the **leftmost prefix** rule a composite index automatically
+also serves queries that filter on `id_cantina` alone. This made the previous
+single index `idx_movimenti_cantina` **redundant** (same prefix, no additional
+benefit, only extra write/space cost) -> **removed** and replaced by
+`idx_movimenti_cantina_data`:
+
+```sql
+CREATE INDEX idx_movimenti_cantina_data ON movimenti(id_cantina, data_ora);
+```
+
+**Why no other indexes.** Consistent with the principle "an index speeds up
+reads but slows down writes and takes up space" (you don't index everything), no
+further indexes are added beyond this one: stock (O2) is already covered by the
+`UNIQUE(id_cantina, id_bevanda)` constraint on `Listino` (which is effectively
+an index); browsing the wine list (O3) is already covered by the composite PK
+`(id_carta_vini, id_listino)` of `Contiene_voce`, whose leftmost prefix serves
+exactly the "all entries of a list" pattern; reference tables (`produttore`,
+`fornitore`, etc.) have volumes and read/write frequencies too low to justify
+indexes beyond the FKs already present.
+
+### 12.1 Secondary index summary
+
+| Index | Table | Columns | Operation that justifies it |
+|---|---|---|---|
+| `idx_movimenti_cantina_data` | Movimenti | `(id_cantina, data_ora)` | O5 — monthly report per cellar; also covers cellar-only filters (leftmost prefix) |
+| `idx_movimenti_bevanda` | Movimenti | `id_bevanda` | join/filter by beverage (stock computation, triggers) |
+| `idx_movimenti_dipendente` | Movimenti | `id_dipendente` | O1a/O1b — join on `Registra` |
+| `idx_movimenti_fornitore` | Movimenti | `id_fornitore` | O5 — supplies report |
+| `uq_listino_bevanda_cantina` (UNIQUE) | Listino | `(id_cantina, id_bevanda)` | O2 — consult stock, point access |
+| Composite PK `Contiene_voce` | Carta_vini_voce | `(id_carta_vini, id_listino)` | O3 — view wine list, ordered by entry |
+
+---
+
+## 13. Procedural constraints (triggers)
+
+> Input to this section: the constraints not expressible graphically listed in
+> Sec. 5. A **CHECK** in MariaDB is evaluated at the **single-row** level (it can
+> only compare columns of the same row being inserted/updated); a constraint
+> that requires reading **other rows** or **other tables** — like the first
+> group in Sec. 5 (stock/movements) — is not expressible with a CHECK and
+> requires a **trigger**.
+
+### 13.1 Implemented triggers
+
+**`oversell`** — `BEFORE INSERT ON movimenti`, `FOR EACH ROW`.
+
+Implements the second constraint of the "Stock / movements" group in Sec. 5 ("an
+unload/sale movement cannot exceed the beverage's current stock"). For movements
+of type `SCARICO`/`VENDITA`, it reads the current stock of the
+`(id_cantina, id_bevanda)` pair from `Listino` and, if insufficient relative to
+`NEW.quantita_bottiglie`, raises an application error (`SIGNAL SQLSTATE
+'45000'`) that prevents the movement from being inserted:
+
+```sql
+DELIMITER $$
+CREATE TRIGGER oversell BEFORE INSERT
+  ON movimenti
+  FOR EACH ROW
+  BEGIN
+    IF NEW.tipo IN ('SCARICO','VENDITA') THEN
+      SELECT qr.giacenza INTO @giacenza FROM (SELECT l.giacenza FROM listino l
+      WHERE l.id_cantina = NEW.id_cantina AND l.id_bevanda = NEW.id_bevanda) as qr
+      ;
+      IF @giacenza < NEW.quantita_bottiglie THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Bottiglie insufficienti';
+      END IF;
+    END IF;
+  END$$
+DELIMITER ;
+```
+
+**`follow_up`** — `AFTER INSERT ON movimenti`, `FOR EACH ROW`.
+
+Implements the first and third constraints of the same group ("stock cannot
+become negative" — guaranteed upstream by `oversell` plus the CHECK
+`chk_listino_giacenza` on `Listino` as a safety net — and "stock must remain
+consistent with the sum of movements, updated automatically"). After a movement
+is inserted, it updates `Listino.giacenza` for the `(id_cantina, id_bevanda)`
+pair: increasing for `CARICO`/`ACQUISTO`, decreasing for `SCARICO`/`VENDITA`.
+Being `AFTER INSERT`, it only acts on movements already validated by
+`oversell`:
+
+```sql
+DELIMITER $$
+CREATE TRIGGER follow_up AFTER INSERT
+  ON movimenti
+  FOR EACH ROW
+  BEGIN
+    IF NEW.tipo IN ('CARICO', 'ACQUISTO') THEN
+      UPDATE listino SET giacenza = giacenza + NEW.quantita_bottiglie
+      WHERE id_cantina = NEW.id_cantina AND id_bevanda = NEW.id_bevanda;
+    END IF;
+    IF NEW.tipo IN ('SCARICO', 'VENDITA') THEN
+      UPDATE listino SET giacenza = giacenza - NEW.quantita_bottiglie
+      WHERE id_cantina = NEW.id_cantina AND id_bevanda = NEW.id_bevanda;
+    END IF;
+  END$$
+DELIMITER ;
+```
+
+As a consequence, in `02_seed.sql` stock is no longer explicitly assigned in
+`Listino`: it starts from `DEFAULT 0` and is entirely derived from the
+movements loaded in the same file, via `follow_up` — consistency between seed
+data and application logic verified directly on the DB (expected values
+40/5/20/12/30/96/8 confirmed for the 7 rows of `Listino`).
+
+*Verification performed:* both triggers loaded on the real DB; tested an unload
+insert exceeding available stock (correctly blocked by `oversell` with error
+1644/45000) and a valid insert (accepted, with `Listino.giacenza` correctly
+updated by `follow_up`).
+
+> **Scope: INSERT only.** Both triggers are on `INSERT`: `UPDATE` and `DELETE` on
+> `Movimenti` do not recompute stock. This is consistent with the **append-only**
+> design of movements (Sec. 7.1: movements are never deleted, they accumulate and
+> are periodically archived): a correction is recorded as a new movement of the
+> opposite sign, not by modifying or deleting existing ones. Stock therefore stays
+> consistent with the sum of movements at all times.
+
+### 13.2 Other Sec. 5 constraints — CHECKs already present and triggers still to do
+
+The Sec. 5 constraints expressible at the **single-row** level are already
+implemented as `CHECK` in `01_schema.sql` (evaluated by the engine on every
+insert/update). Only the constraints that require reading **other rows or other
+tables** remain to be implemented, for which a trigger is needed (future work):
+
+| Constraint (Sec. 5) | Mechanism | Rationale | Status |
+|---|---|---|---|
+| Sale price >= purchase price | CHECK | comparison between columns of the same `Listino` row | ✅ done (`chk_listino_prezzo`) |
+| `ACQUISTO` movement requires a supplier, other types don't | CHECK | comparison between columns of the same `Movimenti` row | ✅ done (`chk_movimenti_acquisto`) |
+| Wine list: `data_pubblicazione >= data_creazione`, `data_archiviazione >= data_pubblicazione` | CHECK | comparison between columns of the same `Carta_vini` row | ✅ done (`chk_cartavini_date_pub`, `chk_cartavini_date_arch`) |
+| Generalization consistency (t,d): `categoria` consistent with presence in `vino`/`birra`/`analcolico`/`super_alcolico` | trigger | requires reading the subtype tables, not just the current row | to do |
+| Grape variety percentages (`vino_vitigno.percentuale`) sum to 100% | trigger | aggregate over multiple rows of the same beverage | to do |
+| Cellar consistency between wine list and listino entries | trigger | requires traversing `Carta_vini_voce` -> `Listino` to compare cellar | to do |
+
+---
