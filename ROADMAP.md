@@ -17,7 +17,9 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do
 - [x] Normalization refinement — Paese/Regione decomposition (2NF)
 - [x] **Physical design** — load-justified secondary index on `movimenti` (topic15); documented in Sec. 12
 - [x] Procedural constraints — `oversell` + `follow_up` triggers (Sec. 13); row-level CHECKs already in schema
-- [ ] Example queries (joins, aggregations, subqueries)
+- [x] External schema — per-role views documented (Sec. 12.2)
+- [x] Example queries — 10 as stored procedures (Sec. 14): joins, aggregations, subqueries
+- [ ] Assembly + compression to <=15pp, then PDF export
 - [ ] (optional) demo application  ← **Track B**
 
 ## Track B — Demo app (this repo)
@@ -50,8 +52,13 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do
 
 ## Current focus
 
-Triggers, all per-role views and all per-role pages are done and validated. Next
-up on Track B: the **movement-registration screen** (load/sale → stock moves live
-via the triggers), then the GRANT/REVOKE permissions demo. Known limitation: the
-role views expose every cellar's rows (column-scoped, not row-scoped by cantina) —
-per-cantina filtering is future work.
+**Track A's written content is complete** — conceptual through physical design,
+triggers, external-schema views (Sec. 12.2) and the 10 example queries (Sec. 14) are
+all documented, IT and EN in sync. What's left for the deliverable is **compression
+to <=15pp and the PDF export**.
+
+On Track B: triggers, all per-role views and per-role pages are done and validated.
+Next: the **movement-registration screen** (load/sale → stock moves live via the
+triggers), then the GRANT/REVOKE permissions demo. Known limitation: the role views
+expose every cellar's rows (column-scoped, not row-scoped by cantina) — per-cantina
+filtering is future work.

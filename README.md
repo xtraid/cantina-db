@@ -42,6 +42,8 @@ Full E-R schema and design rationale in
 - **Triggers** keep stock consistent and forbid negative quantities.
 - **Views** as an external schema: each role (waiter, warehouse, owner) sees only
   what it needs.
+- **10 example queries** as stored procedures (joins, aggregations, subqueries),
+  each tied back to a design choice (Sec. 14).
 - **Streamlit demo**: employee login, movement registration, stock and wine-list
   consultation.
 
@@ -61,7 +63,8 @@ cantina-db/
 │   ├── 01_schema.sql      # DDL: tables, constraints, indexes
 │   ├── 02_triggers.sql    # stock maintenance (follow_up) + oversell guard
 │   ├── 03_seed.sql        # realistic sample data (stock derived via triggers)
-│   └── 04_views.sql       # per-role views (warehouse / owner / waiter)
+│   ├── 04_views.sql       # per-role views (warehouse / owner / waiter)
+│   └── 05_queries.sql     # 10 example queries, each as a stored procedure
 ├── app/                   # Streamlit application (login + one page per role)
 ├── docs/
 │   ├── progettazione.md   # design document IT (requirements -> logical -> 3NF -> physical -> triggers)
@@ -89,8 +92,9 @@ mariadb -u <user> -p cantina < sql/04_views.sql
 
 ## Status
 
-🚧 Work in progress — schema, triggers and all three per-role views complete and
-validated on MariaDB; the Streamlit app has employee login and a read-only page per
+🚧 Work in progress — schema, triggers, all three per-role views and the 10 example
+queries (stored procedures) complete and validated on MariaDB; the design document
+(IT + EN) is complete. The Streamlit app has employee login and a read-only page per
 role (owner / warehouse / waiter). Still to come: the movement-registration screen
 (load/sale), the GRANT/REVOKE role demo, and the remaining trigger-based constraints
 (docs Sec. 13.2).
@@ -131,15 +135,18 @@ Schema E-R completo e scelte di progetto in
 - **Trigger** per mantenere la giacenza coerente e impedire scorte negative.
 - **Viste** come schema esterno: ogni ruolo (cameriere, magazziniere, titolare)
   vede solo ciò che gli compete.
+- **10 query di esempio** come stored procedure (join, aggregazioni, subquery),
+  ciascuna agganciata a una scelta di progetto (Sez. 14).
 - **Demo Streamlit**: login per dipendente, registrazione movimenti,
   consultazione giacenze e carte vini.
 
 ### Stato
 
-🚧 In sviluppo — schema, trigger e tutte e tre le viste per ruolo completi e
-validati su MariaDB; l'app Streamlit ha il login dipendente e una pagina in sola
-lettura per ruolo (titolare / magazziniere / cameriere). Ancora da fare: la
-schermata di registrazione movimenti (carico/vendita), la demo dei permessi
+🚧 In sviluppo — schema, trigger, tutte e tre le viste per ruolo e le 10 query di
+esempio (stored procedure) completi e validati su MariaDB; il documento di
+progettazione (IT + EN) è completo. L'app Streamlit ha il login dipendente e una
+pagina in sola lettura per ruolo (titolare / magazziniere / cameriere). Ancora da
+fare: la schermata di registrazione movimenti (carico/vendita), la demo dei permessi
 GRANT/REVOKE e i vincoli via trigger rimanenti (documento Sez. 13.2).
 
 > ℹ️ L'ordine numerico è significativo: i trigger (`02`) si caricano **prima** del
