@@ -43,9 +43,11 @@ Full E-R schema and design rationale in
 - **Views** as an external schema: each role (waiter, warehouse, owner) sees only
   what it needs.
 - **10 example queries** as stored procedures (joins, aggregations, subqueries),
-  each tied back to a design choice (Sec. 14).
-- **Streamlit demo**: employee login, movement registration, stock and wine-list
-  consultation.
+  each tied back to a design choice (Sec. 14) and **runnable in-app** via a
+  per-role toggle.
+- **Streamlit demo**: employee login, per-cellar stock and wine-list consultation
+  (row-scoped to the employee's own cellar), plus stock-movement registration and
+  atomic catalog writes (new beverage / price-list entry).
 
 ## Stack
 
@@ -64,7 +66,7 @@ cantina-db/
 │   ├── 02_triggers.sql    # stock maintenance (follow_up) + oversell guard
 │   ├── 03_seed.sql        # realistic sample data (stock derived via triggers)
 │   ├── 04_views.sql       # per-role views (warehouse / owner / waiter)
-│   └── 05_queries.sql     # 10 example queries, each as a stored procedure
+│   └── 05_queries_and_sp.sql  # 10 example queries + app write procedures (all stored procedures)
 ├── app/                   # Streamlit application (login + one page per role)
 ├── docs/
 │   ├── progettazione.md   # design document IT (requirements -> logical -> 3NF -> physical -> triggers)
@@ -94,10 +96,13 @@ mariadb -u <user> -p cantina < sql/04_views.sql
 
 🚧 Work in progress — schema, triggers, all three per-role views and the 10 example
 queries (stored procedures) complete and validated on MariaDB; the design document
-(IT + EN) is complete. The Streamlit app has employee login and a read-only page per
-role (owner / warehouse / waiter). Still to come: the movement-registration screen
-(load/sale), the GRANT/REVOKE role demo, and the remaining trigger-based constraints
-(docs Sec. 13.2).
+(IT + EN) is complete. The Streamlit app has employee login and a per-role page
+(owner / warehouse / waiter), each **row-scoped to its own cellar** and able to run
+its Sec. 14 stored-procedure queries via a toggle. The app now **writes**:
+movement registration (load/sale → stock kept live by the triggers, oversell surfaced
+to the user), price-list entries, and atomic new-beverage creation (`crea_bevanda`,
+Sec. 14.3). Still to come: the GRANT/REVOKE role demo and the remaining trigger-based
+constraints (docs Sec. 13.2).
 
 ---
 
@@ -136,18 +141,22 @@ Schema E-R completo e scelte di progetto in
 - **Viste** come schema esterno: ogni ruolo (cameriere, magazziniere, titolare)
   vede solo ciò che gli compete.
 - **10 query di esempio** come stored procedure (join, aggregazioni, subquery),
-  ciascuna agganciata a una scelta di progetto (Sez. 14).
-- **Demo Streamlit**: login per dipendente, registrazione movimenti,
-  consultazione giacenze e carte vini.
+  ciascuna agganciata a una scelta di progetto (Sez. 14) ed **eseguibili
+  nell'app** tramite un toggle per ruolo.
+- **Demo Streamlit**: login per dipendente, consultazione giacenze e carte vini,
+  filtrata sulla cantina di competenza del dipendente.
 
 ### Stato
 
 🚧 In sviluppo — schema, trigger, tutte e tre le viste per ruolo e le 10 query di
 esempio (stored procedure) completi e validati su MariaDB; il documento di
 progettazione (IT + EN) è completo. L'app Streamlit ha il login dipendente e una
-pagina in sola lettura per ruolo (titolare / magazziniere / cameriere). Ancora da
-fare: la schermata di registrazione movimenti (carico/vendita), la demo dei permessi
-GRANT/REVOKE e i vincoli via trigger rimanenti (documento Sez. 13.2).
+pagina per ruolo (titolare / magazziniere / cameriere), ciascuna **filtrata sulla
+propria cantina** e con le query stored-procedure della Sez. 14 eseguibili tramite
+toggle. L'app ora **scrive**: registrazione movimenti (carico/vendita → giacenza
+aggiornata dai trigger, oversell mostrato all'utente), aggiunta a listino e creazione
+di una bevanda nuova in modo atomico (`crea_bevanda`, Sez. 14.3). Ancora da fare: la
+demo dei permessi GRANT/REVOKE e i vincoli via trigger rimanenti (documento Sez. 13.2).
 
 > ℹ️ L'ordine numerico è significativo: i trigger (`02`) si caricano **prima** del
 > seed (`03`) perché la giacenza non è scritta a mano — parte da 0 e viene costruita

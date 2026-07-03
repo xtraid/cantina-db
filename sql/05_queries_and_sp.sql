@@ -186,3 +186,96 @@ CREATE PROCEDURE dipendente_piu_attivo ()
         ORDER BY conteggi.id_cantina;
     END$$
 DELIMITER ;
+
+
+-- ============================================================================
+-- Procedure di scrittura dell'applicazione (Track B — NON query di Sez. 14).
+-- ============================================================================
+
+-- crea_bevanda — inserisce una bevanda "mai vista" nel catalogo globale.
+-- Catena atomica: (eventuale) produttore nuovo -> bevanda (padre) -> riga del
+-- sottotipo, obbligatoria per la generalizzazione totale ed esclusiva (t,d):
+-- ogni bevanda DEVE essere esattamente una tra vino/birra/super_alcolico/analcolico.
+-- Produttore: se p_id_produttore IS NULL ne crea uno nuovo dai campi p_produttore_*;
+-- altrimenti riusa quello esistente.
+-- L'atomicità è garantita dal chiamante (connessione autocommit=OFF: commit unico
+-- a fine CALL, rollback su qualunque errore/SIGNAL).
+DELIMITER $$
+DROP PROCEDURE IF EXISTS crea_bevanda$$
+CREATE PROCEDURE crea_bevanda (
+    IN p_nome              VARCHAR(255),
+    IN p_categoria         VARCHAR(100),
+    IN p_gradazione        DECIMAL(5,2),
+    IN p_volume            DECIMAL(8,2),
+    IN p_is_biologico      BOOLEAN,
+    IN p_id_produttore     INT,
+    IN p_produttore_nome   VARCHAR(255),
+    IN p_produttore_paese  VARCHAR(100),
+    -- Parametri del solo VINO (NULL per le altre categorie)
+    IN p_annata            SMALLINT,
+    IN p_colore            VARCHAR(50),
+    IN p_id_vitigno        INT,
+    IN p_percentuale       DECIMAL(5,2),
+    IN p_mese_vendemmia    VARCHAR(20),
+    IN p_tipo_vendemmia    VARCHAR(100),
+    IN p_durata_legno_mesi SMALLINT,
+    IN p_tipo_legno        VARCHAR(100)
+)
+    BEGIN
+        DECLARE v_id_produttore INT;
+        DECLARE v_id_bevanda    INT;
+
+        -- Produttore: esistente o nuovo
+        IF p_id_produttore IS NULL THEN
+            IF p_produttore_nome IS NULL OR p_produttore_nome = '' THEN
+                SIGNAL SQLSTATE '45000'
+                    SET MESSAGE_TEXT = 'Produttore mancante';
+            END IF;
+            INSERT INTO produttore (nome, paese)
+            VALUES (p_produttore_nome, p_produttore_paese);
+            SET v_id_produttore = LAST_INSERT_ID();
+        ELSE
+            SET v_id_produttore = p_id_produttore;
+        END IF;
+
+        -- Bevanda (padre della gerarchia)
+        INSERT INTO bevanda
+            (nome, categoria, gradazione_alcolica, volume, is_biologico, id_produttore)
+        VALUES
+            (p_nome, p_categoria, p_gradazione, p_volume, p_is_biologico, v_id_produttore);
+        SET v_id_bevanda = LAST_INSERT_ID();
+
+        -- Sottotipo obbligatorio (generalizzazione totale)
+        IF p_categoria = 'VINO' THEN
+            -- vino deve avere >= 1 vitigno (relazione N:M "Composto")
+            IF p_id_vitigno IS NULL THEN
+                SIGNAL SQLSTATE '45000'
+                    SET MESSAGE_TEXT = 'Vitigno mancante per il vino';
+            END IF;
+            INSERT INTO vino (id_bevanda, annata, colore)
+            VALUES (v_id_bevanda, p_annata, p_colore);
+            -- vinificazione: partecipazione 1:1 obbligatoria
+            INSERT INTO vinificazione (mese_vendemmia, tipo_vendemmia, id_bevanda)
+            VALUES (p_mese_vendemmia, p_tipo_vendemmia, v_id_bevanda);
+            INSERT INTO vino_vitigno (id_bevanda, id_vitigno, percentuale)
+            VALUES (v_id_bevanda, p_id_vitigno, p_percentuale);
+            -- affinamento: opzionale (0:1) -> inserito solo se fornito
+            IF p_durata_legno_mesi IS NOT NULL
+               OR (p_tipo_legno IS NOT NULL AND p_tipo_legno <> '') THEN
+                INSERT INTO affinamento (durata_legno_mesi, tipo_legno, id_bevanda)
+                VALUES (p_durata_legno_mesi, p_tipo_legno, v_id_bevanda);
+            END IF;
+        ELSEIF p_categoria = 'BIRRA' THEN
+            INSERT INTO birra (id_bevanda) VALUES (v_id_bevanda);
+        ELSEIF p_categoria = 'SUPER_ALCOLICO' THEN
+            INSERT INTO super_alcolico (id_bevanda) VALUES (v_id_bevanda);
+        ELSEIF p_categoria = 'ANALCOLICO' THEN
+            INSERT INTO analcolico (id_bevanda) VALUES (v_id_bevanda);
+        ELSE
+            SIGNAL SQLSTATE '45000'
+                SET MESSAGE_TEXT = 'Categoria non valida';
+        END IF;
+
+        SELECT v_id_bevanda AS id_bevanda;
+    END$$
+DELIMITER ;

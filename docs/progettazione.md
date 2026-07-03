@@ -876,7 +876,7 @@ dell'invariante non dipende dalla fortuna: è garantita a valle dal CHECK.
 
 ### 14.2 Implementazione
 
-Ogni query è incapsulata in una **stored procedure** in `05_queries.sql` (nome fra parentesi):
+Ogni query è incapsulata in una **stored procedure** in `05_queries_and_sp.sql` (nome fra parentesi):
 questo soddisfa anche il requisito "programmabili" (t11), rende parametriche le query che lo
 richiedono (`IN p_...`) e offre un punto d'ingresso unico all'applicazione. Sotto si riporta
 lo `SELECT` centrale di ciascuna; tutte sono state verificate sul DB reale.
@@ -1015,5 +1015,26 @@ FROM listino l
 INNER JOIN bevanda b USING(id_bevanda)
 WHERE l.giacenza < (SELECT AVG(giacenza) FROM listino WHERE l.id_cantina = id_cantina);
 ```
+
+### 14.3 Procedura di scrittura: `crea_bevanda`
+
+Oltre alle query di lettura, `05_queries_and_sp.sql` contiene una procedura di **scrittura**
+usata dall'app per introdurre una bevanda "mai vista" nel catalogo globale. Il punto di
+progetto è l'**atomicità**: una sola transazione (connessione `autocommit=OFF`, commit unico
+a fine `CALL`, rollback su qualunque `SIGNAL`/errore) che soddisfa in un colpo solo i vincoli
+del modello concettuale:
+
+- **Generalizzazione totale ed esclusiva `(t,d)`**: inserisce la `bevanda` padre *e* la riga
+  del sottotipo (`vino`/`birra`/`super_alcolico`/`analcolico`). Una bevanda senza sottotipo
+  violerebbe la totalità (Sez. 9.1).
+- **Produttore**: opzionalmente crea un `produttore` nuovo (se non è passato un id esistente),
+  perché `bevanda.id_produttore` è NOT NULL.
+- **Vincoli del vino** (solo se `categoria = 'VINO'`): crea la `vinificazione` (partecipazione
+  **1:1** obbligatoria) e almeno un `vino_vitigno` (relazione N:M "Composto", ≥1); l'`affinamento`
+  (0:1) è inserito solo se fornito. Un `SIGNAL 'Vitigno mancante per il vino'` protegge il ≥1.
+
+Semplificazione dichiarata: alla creazione il vino riceve **un solo vitigno**; i blend (>1
+vitigno) e l'arricchimento dei restanti attributi sono demandati a una futura operazione di
+modifica.
 
 ---

@@ -973,7 +973,7 @@ the invariant does not rely on luck: it is guaranteed downstream by the CHECK.
 
 ### 14.2 Implementation
 
-Each query is wrapped in a **stored procedure** in `05_queries.sql` (name in parentheses):
+Each query is wrapped in a **stored procedure** in `05_queries_and_sp.sql` (name in parentheses):
 this also satisfies the "programmable" requirement (t11), parameterizes the queries that need
 it (`IN p_...`) and offers a single entry point to the application. Below is the core `SELECT`
 of each; all have been verified on the real DB.
@@ -1112,5 +1112,25 @@ FROM listino l
 INNER JOIN bevanda b USING(id_bevanda)
 WHERE l.giacenza < (SELECT AVG(giacenza) FROM listino WHERE l.id_cantina = id_cantina);
 ```
+
+### 14.3 Write procedure: `crea_bevanda`
+
+Besides the read queries, `05_queries_and_sp.sql` holds a **write** procedure the app uses to
+introduce a brand-new beverage into the global catalog. The design point is **atomicity**: a
+single transaction (connection `autocommit=OFF`, one commit at the end of the `CALL`, rollback
+on any `SIGNAL`/error) that satisfies the conceptual-model constraints in one shot:
+
+- **Total, exclusive generalization `(t,d)`**: it inserts the `bevanda` parent *and* the
+  matching subtype row (`vino`/`birra`/`super_alcolico`/`analcolico`). A beverage with no
+  subtype would break totality (Sec. 9.1).
+- **Producer**: it optionally creates a new `produttore` (when no existing id is passed), since
+  `bevanda.id_produttore` is NOT NULL.
+- **Wine constraints** (only when `categoria = 'VINO'`): it creates the `vinificazione`
+  (mandatory **1:1** participation) and at least one `vino_vitigno` (N:M "Composto" relation,
+  ≥1); `affinamento` (0:1) is inserted only if provided. A `SIGNAL 'Vitigno mancante per il vino'`
+  guards the ≥1 rule.
+
+Declared simplification: at creation a wine gets **a single grape variety**; blends (>1 grape)
+and enrichment of the remaining attributes are deferred to a future edit operation.
 
 ---

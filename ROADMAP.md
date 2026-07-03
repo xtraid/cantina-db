@@ -31,7 +31,9 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do
 - [x] App: project setup + DB connection (parameterized, injection-safe)  ← topic12
 - [x] App: authentication (employee login, role in session)
 - [x] App: per-role pages (warehouse / waiter / owner) — each reads its own view
-- [ ] App: movement registration (load/sale -> stock moves live)
+- [x] App: Sec.14 stored procedures runnable per role (toggle) + per-cantina row scoping
+- [x] App: movement registration (load/sale -> stock moves live; oversell shown to the user)
+- [x] App: catalog writes — add beverage to price list; create a new beverage (bevanda+subtype+producer, wine details) atomically via `crea_bevanda` SP (Sec. 14.3)
 - [ ] App: permissions demo (GRANT/REVOKE, real DB roles)                 ← topic09
 - [ ] README polish — app screenshot / short gif
 
@@ -57,8 +59,11 @@ triggers, external-schema views (Sec. 12.2) and the 10 example queries (Sec. 14)
 all documented, IT and EN in sync. What's left for the deliverable is **compression
 to <=15pp and the PDF export**.
 
-On Track B: triggers, all per-role views and per-role pages are done and validated.
-Next: the **movement-registration screen** (load/sale → stock moves live via the
-triggers), then the GRANT/REVOKE permissions demo. Known limitation: the role views
-expose every cellar's rows (column-scoped, not row-scoped by cantina) — per-cantina
-filtering is future work.
+On Track B: triggers, all per-role views and per-role pages are done and validated;
+each role page runs its Sec.14 stored procedures (via a toggle) and is **row-scoped to
+the employee's own cellar** (owner: to their company's cellars). The app now **writes**:
+the warehouse page registers movements (load/sale → stock moves live via the triggers,
+oversell surfaced to the user), adds beverages to a price list, and creates brand-new
+beverages atomically (`crea_bevanda`, Sec. 14.3). Next: the GRANT/REVOKE permissions demo
+and README polish. Note: row scoping is enforced at the application level; DB-level
+enforcement (GRANT/REVOKE per role) is still future work.
