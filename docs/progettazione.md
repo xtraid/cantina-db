@@ -731,4 +731,50 @@ quali serve un trigger (lavoro futuro):
 | Percentuali vitigni (`vino_vitigno.percentuale`) sommano a 100% | trigger | aggregato su più righe della stessa bevanda | da fare |
 | Coerenza di cantina fra carta vini e voci di listino | trigger | richiede di attraversare `Carta_vini_voce` → `Listino` per confrontare la cantina | da fare |
 
+### 13.3 Concorrenza: race condition oversell / follow_up (non gestita — nota di progetto)
+
+La `SELECT` di `oversell` è una lettura **non bloccante**: due movimenti di `VENDITA`
+concorrenti sulla stessa coppia `(id_cantina, id_bevanda)` possono leggere entrambi la stessa
+giacenza (es. 5) e superare entrambi il controllo, portando la giacenza sotto zero. In questo
+scenario la seconda `UPDATE` di `follow_up` viene comunque **respinta dal CHECK
+`chk_listino_giacenza` (`giacenza >= 0`) su `Listino`**, che funge da rete di sicurezza e
+preserva l'invariante — ma l'errore restituito è quello generico del CHECK, non il messaggio
+applicativo "Bottiglie insufficienti".
+
+La soluzione canonica sarebbe una lettura bloccante `SELECT ... FOR UPDATE` nel trigger, che
+serializza le vendite concorrenti sulla stessa riga di listino. Non è implementata (fuori
+scope per un DB di progetto monoutente), ma è documentata qui perché la correttezza
+dell'invariante non dipende dalla fortuna: è garantita a valle dal CHECK.
+
+---
+
+## 14. Query di esempio
+
+> Le interrogazioni seguenti esercitano lo schema coprendo i costrutti richiesti (join
+> multipli, aggregazioni, subquery) e si agganciano alle sezioni già scritte: dove possibile
+> ogni query corrisponde a un'operazione della tavola 7.2 e "dimostra" una scelta di
+> progettazione. Presentazione: per ciascuna, la domanda in linguaggio naturale, l'operazione
+> di 7.2 corrispondente (dove c'è) e il costrutto SQL dimostrato. **Bastano 6-8 query ben
+> scelte**; priorità a quelle marcate ⭐, che legano le query al resto della progettazione.
+
+### 14.1 Scaletta
+
+| # | Gruppo | Domanda (linguaggio naturale) | Op. 7.2 | Costrutto dimostrato | Prio |
+|---|---|---|---|---|---|
+| 1 | join | Scheda completa di un vino: nome, produttore, regione e paese, vitigni con percentuali, affinamento | O3 | catena di join più lunga (bevanda→vino→vino_vitigno→vitigno, regione→paese); mostra la decomposizione 2NF Paese/Regione (Sez. 11) | |
+| 2 | join | Carta vini pubblicata "pronta per la stampa": voci in ordine con bevanda, produttore e prezzo | O3 | join multipli + `WHERE stato='pubblicata'` + `ORDER BY`; è la query dietro la vista del cameriere (schema esterno) | |
+| 3 | aggreg. | Valore di magazzino per cantina: somma di giacenza × prezzo di acquisto | O5 | `SUM(...)` + `GROUP BY` cantina | |
+| 4 | aggreg. | Margine medio per categoria di bevanda, per cantina | O5 | `GROUP BY` sul discriminante (t,d) della generalizzazione | |
+| 5 | aggreg. | Top N bevande più vendute in un intervallo di date, per una cantina | O5 | filtro `tipo='VENDITA'` + range `data_ora` + `GROUP BY`/`ORDER BY`/`LIMIT`; **usa l'indice `(id_cantina, data_ora)` di Sez. 12** → chiude il cerchio della progettazione fisica | ⭐ |
+| 6 | aggreg. | Vini blend: vini composti da più di un vitigno, col numero di vitigni | — | `GROUP BY` + `HAVING COUNT(*) > 1` | |
+| 7 | subquery | Verifica della ridondanza controllata: giacenza memorizzata nel listino vs ricalcolata dai movimenti (carichi − scarichi) | — | subquery scalare/derivata di somma; verifica la denormalizzazione di Sez. 8 e collauda i trigger | ⭐ |
+| 8 | subquery | Bevande a listino mai vendute (o mai movimentate) | — | anti-join: `NOT EXISTS` **oppure** `LEFT JOIN … IS NULL` (mostrare le due formulazioni equivalenti) | |
+| 9 | subquery | Il dipendente più attivo di ogni cantina (chi ha registrato più movimenti) | — | subquery sul massimo per gruppo | |
+| 10 | subquery | Bevande sotto la giacenza media della propria cantina (lista riordino) | O2 | **subquery correlata** | ⭐ |
+
+> **Ordine di scrittura consigliato:** prima la **7** (serve anche a collaudare il fix del
+> trigger sul carico senza listino), poi **5** e **10**; le restanti fino a 6-8 totali.
+> L'SQL di ciascuna query va inserito qui sotto man mano (una sottosezione per query, con la
+> query commentata e una riga sul costrutto).
+
 ---
