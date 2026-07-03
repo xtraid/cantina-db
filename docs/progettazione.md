@@ -648,8 +648,10 @@ per giustificare indici oltre alle FK già presenti.
 Implementa il secondo vincolo del gruppo "Giacenza / movimenti" di Sez. 5 ("un movimento di
 scarico/vendita non può superare la giacenza attuale della bevanda"). Per i movimenti di tipo
 `SCARICO`/`VENDITA`, legge la giacenza corrente della coppia `(id_cantina, id_bevanda)` da
-`Listino` e, se insufficiente rispetto a `NEW.quantita_bottiglie`, solleva un errore
-applicativo (`SIGNAL SQLSTATE '45000'`) che impedisce l'inserimento del movimento:
+`Listino` in una variabile locale e solleva un errore applicativo (`SIGNAL SQLSTATE '45000'`)
+che impedisce l'inserimento se la giacenza è **insufficiente** rispetto a
+`NEW.quantita_bottiglie` **oppure inesistente** (`v_giacenza IS NULL`: la coppia non è a
+listino, quindi non c'è nulla da scaricare):
 
 ```sql
 DELIMITER $$
@@ -657,11 +659,12 @@ CREATE TRIGGER oversell BEFORE INSERT
   ON movimenti
   FOR EACH ROW
   BEGIN
+    DECLARE v_giacenza INT DEFAULT NULL;
     IF NEW.tipo IN ('SCARICO','VENDITA') THEN
-      SELECT qr.giacenza INTO @giacenza FROM (SELECT l.giacenza FROM listino l
+      SELECT qr.giacenza INTO v_giacenza FROM (SELECT l.giacenza FROM listino l
       WHERE l.id_cantina = NEW.id_cantina AND l.id_bevanda = NEW.id_bevanda) as qr
       ;
-      IF @giacenza < NEW.quantita_bottiglie THEN
+      IF v_giacenza IS NULL OR v_giacenza < NEW.quantita_bottiglie THEN
         SIGNAL SQLSTATE '45000'
         SET MESSAGE_TEXT = 'Bottiglie insufficienti';
       END IF;
@@ -678,7 +681,15 @@ come rete di sicurezza — e "la giacenza deve restare coerente con la somma dei
 aggiornata automaticamente"). Dopo l'inserimento di un movimento, aggiorna `Listino.giacenza`
 per la coppia `(id_cantina, id_bevanda)`: in aumento per `CARICO`/`ACQUISTO`, in diminuzione
 per `SCARICO`/`VENDITA`. Essendo `AFTER INSERT`, agisce solo su movimenti già validati da
-`oversell`:
+`oversell` (lato scarico).
+
+Sul lato **carico**, l'`UPDATE` protegge la coerenza controllando `ROW_COUNT()` subito dopo:
+se ha toccato **0 righe** significa che la coppia `(id_cantina, id_bevanda)` non è a listino,
+quindi la giacenza andrebbe persa in silenzio — il movimento viene perciò respinto con `SIGNAL`
+(e la INSERT annullata). È la scelta di progetto "prima si crea la voce di listino, poi si
+carica": il carico non conosce i prezzi, quindi non può auto-creare la riga di `Listino`. Il
+controllo è sicuro perché `chk_movimenti_quantita` (`quantita_bottiglie > 0`) garantisce che
+l'`UPDATE` modifichi sempre la riga quando esiste.
 
 ```sql
 DELIMITER $$
@@ -689,6 +700,10 @@ CREATE TRIGGER follow_up AFTER INSERT
     IF NEW.tipo IN ('CARICO', 'ACQUISTO') THEN
       UPDATE listino SET giacenza = giacenza + NEW.quantita_bottiglie
       WHERE id_cantina = NEW.id_cantina AND id_bevanda = NEW.id_bevanda;
+      IF ROW_COUNT() = 0 THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Carico su bevanda non presente nel listino della cantina';
+      END IF;
     END IF;
     IF NEW.tipo IN ('SCARICO', 'VENDITA') THEN
       UPDATE listino SET giacenza = giacenza - NEW.quantita_bottiglie
@@ -705,8 +720,9 @@ direttamente sul DB (valori attesi 40/5/20/12/30/96/8 confermati per le 7 righe 
 
 *Verifica effettuata:* caricati entrambi i trigger sul DB reale; testato un inserimento di
 scarico eccedente la giacenza disponibile (bloccato correttamente da `oversell` con errore
-1644/45000) e un inserimento valido (accettato, con `Listino.giacenza` aggiornata
-correttamente da `follow_up`).
+1644/45000), un carico su una coppia non presente a listino (bloccato da `follow_up` via
+`ROW_COUNT() = 0`, con annullamento della INSERT confermato) e un inserimento valido (accettato,
+con `Listino.giacenza` aggiornata correttamente da `follow_up`).
 
 > **Ambito: solo INSERT.** Entrambi i trigger sono su `INSERT`: `UPDATE` e `DELETE` su
 > `Movimenti` non ricalcolano la giacenza. Questo è coerente col disegno **append-only** dei
