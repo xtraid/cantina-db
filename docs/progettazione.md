@@ -237,7 +237,7 @@ cantine per azienda ~1-5; dipendenti per cantina ~5-30; bevande nel catalogo glo
 | Bevanda (catalogo) | E | 10^5-10^6 | catalogo globale condiviso, sostanzialmente statico; inflazionato da annate/cuvée/produttori diversi |
 | Vino (sottotipo) | E | 10^5-10^6 | quota dominante del catalogo (servizio specializzato sui vini) |
 | Birra / Analcolico / Super_alcolico | E | 10^3-10^5 | nicchia rispetto ai vini |
-| Movimenti | E | 10^7-10^8 | Cantine x ~50/gg x ~300gg x 2-3 anni. ⚠ tabella dominante; **cresce in modo illimitato** -> archiviazione periodica |
+| Movimenti | E | 10^7-10^8 | Cantine x ~50/gg x ~300gg x 2-3 anni. NB: tabella dominante; **cresce in modo illimitato** -> archiviazione periodica |
 | Listino | E | 10^4-10^7 | Cantine x bevande a magazzino per cantina (10^2-10^3) |
 | Carta vini | E | 10^3-10^5 | Cantine x carte per cantina (8-30); selezione consultabile dal cliente per ordinare |
 | Produttore / Fornitore | E | 10^4-10^5 | i produttori/fornitori al mondo sono decine di migliaia |
@@ -568,7 +568,7 @@ considerata.
 
 ---
 
-## 12. Progettazione fisica
+## 12. Progettazione fisica e schema esterno
 
 > Input di questa sezione: lo schema logico (Sez. 10, già frozen) e il **carico applicativo**
 > (Sez. 7 — tavola dei volumi e delle operazioni). Nei RDBMS relazionali la progettazione
@@ -630,6 +630,69 @@ per giustificare indici oltre alle FK già presenti.
 | `idx_movimenti_fornitore` | Movimenti | `id_fornitore` | O5 — report forniture |
 | `uq_listino_bevanda_cantina` (UNIQUE) | Listino | `(id_cantina, id_bevanda)` | O2 — consulta giacenza, accesso puntuale |
 | PK composta `Contiene_voce` | Carta_vini_voce | `(id_carta_vini, id_listino)` | O3 — visualizza carta vini, ordinata per voce |
+
+### 12.2 Schema esterno: viste per ruolo
+
+Oltre allo schema logico (livello concettuale/logico) e a quello fisico (livello interno), il
+sistema definisce un **livello esterno** tramite viste (`04_views.sql`). Ogni vista è lo
+schema esterno di un **ruolo** applicativo: espone solo le colonne pertinenti e autorizzate,
+nascondendo il resto. È l'applicazione del principio di **astrazione e sicurezza** delle viste
+(t09): i permessi si concedono sulle *viste*, non sulle tabelle di base, così un ruolo non
+vede colonne che non gli competono. Le viste sono **virtuali** (rieseguite a ogni accesso, non
+copie materializzate dei dati) e alimentano direttamente le pagine per ruolo della demo.
+
+| Vista | Ruolo | Espone | Nasconde |
+|---|---|---|---|
+| `v_giacenze_magazziniere` | magazziniere | cantina, bevanda, categoria, produttore, giacenza, prezzo di vendita | dati finanziari (costo, margine) |
+| `v_giacenze_titolare` | titolare | come sopra **+** prezzo di acquisto e margine | — (ruolo con visibilità piena) |
+| `v_carta_vini_cameriere` | cameriere | titolo carta, posizione, bevanda, produttore, prezzo di vendita | solo carte `pubblicata` e attive; nessun dato di giacenza/costo |
+
+Le prime due partono dalla stessa base (`listino` join `bevanda`, `produttore`, `cantina`,
+filtrate su `attivo`): la differenza è **solo nell'insieme di colonne**, che è esattamente il
+punto delle viste come schema esterno. La terza filtra `stato = 'pubblicata' AND attivo` — il
+cameriere vede solo ciò che è effettivamente in servizio, non le bozze o le carte archiviate.
+
+```sql
+CREATE OR REPLACE VIEW v_giacenze_magazziniere AS
+    SELECT c.nome AS nome_cantina, b.nome AS descrizione_bevanda, b.categoria,
+           p.nome AS nome_produttore, l.giacenza, l.prezzo_vendita
+    FROM listino l
+    INNER JOIN bevanda b    USING(id_bevanda)
+    INNER JOIN produttore p USING(id_produttore)
+    INNER JOIN cantina c    USING(id_cantina)
+    WHERE l.attivo = TRUE AND b.attivo = TRUE
+    ORDER BY c.id_cantina, l.giacenza DESC;
+
+CREATE OR REPLACE VIEW v_giacenze_titolare AS
+    SELECT c.nome AS nome_cantina, b.nome AS descrizione_bevanda, b.categoria,
+           p.nome AS nome_produttore, l.giacenza, l.prezzo_vendita, l.prezzo_acquisto,
+           (l.prezzo_vendita - l.prezzo_acquisto) AS margine
+    FROM listino l
+    INNER JOIN bevanda b    USING(id_bevanda)
+    INNER JOIN produttore p USING(id_produttore)
+    INNER JOIN cantina c    USING(id_cantina)
+    WHERE l.attivo = TRUE AND b.attivo = TRUE
+    ORDER BY c.id_cantina, l.giacenza DESC;
+
+CREATE OR REPLACE VIEW v_carta_vini_cameriere AS
+    SELECT cv.titolo, c.nome AS cantina_di_provenienza, v.descrizione_posizione, v.ordine,
+           b.nome AS descrizione_bevanda, b.categoria, p.nome AS produttore, l.prezzo_vendita
+    FROM carta_vini cv
+    INNER JOIN cantina c         USING(id_cantina)
+    INNER JOIN carta_vini_voce v USING(id_carta_vini)
+    INNER JOIN listino l         USING(id_listino)
+    INNER JOIN bevanda b         USING(id_bevanda)
+    INNER JOIN produttore p      USING(id_produttore)
+    WHERE cv.stato = 'pubblicata' AND cv.attivo = TRUE
+      AND l.attivo = TRUE AND b.attivo = TRUE
+    ORDER BY cv.titolo, v.ordine;
+```
+
+> **Nota di coerenza:** in `v_carta_vini_cameriere` la cantina mostrata è quella della carta
+> (`carta_vini.id_cantina`), mentre il prezzo proviene dalla voce di listino: le due
+> coincidono solo se vale il vincolo "voci di una carta nella stessa cantina" (Sez. 5), non
+> ancora imposto da trigger (Sez. 13.2) — finché è garantito a livello applicativo la vista è
+> corretta.
 
 ---
 
@@ -740,9 +803,9 @@ quali serve un trigger (lavoro futuro):
 
 | Vincolo (Sez. 5) | Meccanismo | Motivazione | Stato |
 |---|---|---|---|
-| Prezzo di vendita ≥ prezzo di acquisto | CHECK | confronto fra colonne della stessa riga di `Listino` | ✅ fatto (`chk_listino_prezzo`) |
-| Movimento `ACQUISTO` richiede fornitore, altri tipi no | CHECK | confronto fra colonne della stessa riga di `Movimenti` | ✅ fatto (`chk_movimenti_acquisto`) |
-| Carta vini: `data_pubblicazione >= data_creazione`, `data_archiviazione >= data_pubblicazione` | CHECK | confronto fra colonne della stessa riga di `Carta_vini` | ✅ fatto (`chk_cartavini_date_pub`, `chk_cartavini_date_arch`) |
+| Prezzo di vendita ≥ prezzo di acquisto | CHECK | confronto fra colonne della stessa riga di `Listino` | fatto (`chk_listino_prezzo`) |
+| Movimento `ACQUISTO` richiede fornitore, altri tipi no | CHECK | confronto fra colonne della stessa riga di `Movimenti` | fatto (`chk_movimenti_acquisto`) |
+| Carta vini: `data_pubblicazione >= data_creazione`, `data_archiviazione >= data_pubblicazione` | CHECK | confronto fra colonne della stessa riga di `Carta_vini` | fatto (`chk_cartavini_date_pub`, `chk_cartavini_date_arch`) |
 | Coerenza generalizzazione (t,d): `categoria` coerente con la presenza in `vino`/`birra`/`analcolico`/`super_alcolico` | trigger | richiede di leggere le tabelle dei sottotipi, non solo la riga corrente | da fare |
 | Percentuali vitigni (`vino_vitigno.percentuale`) sommano a 100% | trigger | aggregato su più righe della stessa bevanda | da fare |
 | Coerenza di cantina fra carta vini e voci di listino | trigger | richiede di attraversare `Carta_vini_voce` → `Listino` per confrontare la cantina | da fare |
@@ -771,7 +834,8 @@ dell'invariante non dipende dalla fortuna: è garantita a valle dal CHECK.
 > ogni query corrisponde a un'operazione della tavola 7.2 e "dimostra" una scelta di
 > progettazione. Presentazione: per ciascuna, la domanda in linguaggio naturale, l'operazione
 > di 7.2 corrispondente (dove c'è) e il costrutto SQL dimostrato. **Bastano 6-8 query ben
-> scelte**; priorità a quelle marcate ⭐, che legano le query al resto della progettazione.
+> scelte**; priorità a quelle contrassegnate come prioritarie nella colonna «Prio», che
+> legano le query al resto della progettazione.
 
 ### 14.1 Scaletta
 
@@ -780,17 +844,154 @@ dell'invariante non dipende dalla fortuna: è garantita a valle dal CHECK.
 | 1 | join | Scheda completa di un vino: nome, produttore, regione e paese, vitigni con percentuali, affinamento | O3 | catena di join più lunga (bevanda→vino→vino_vitigno→vitigno, regione→paese); mostra la decomposizione 2NF Paese/Regione (Sez. 11) | |
 | 2 | join | Carta vini pubblicata "pronta per la stampa": voci in ordine con bevanda, produttore e prezzo | O3 | join multipli + `WHERE stato='pubblicata'` + `ORDER BY`; è la query dietro la vista del cameriere (schema esterno) | |
 | 3 | aggreg. | Valore di magazzino per cantina: somma di giacenza × prezzo di acquisto | O5 | `SUM(...)` + `GROUP BY` cantina | |
-| 4 | aggreg. | Margine medio per categoria di bevanda, per cantina | O5 | `GROUP BY` sul discriminante (t,d) della generalizzazione | |
-| 5 | aggreg. | Top N bevande più vendute in un intervallo di date, per una cantina | O5 | filtro `tipo='VENDITA'` + range `data_ora` + `GROUP BY`/`ORDER BY`/`LIMIT`; **usa l'indice `(id_cantina, data_ora)` di Sez. 12** → chiude il cerchio della progettazione fisica | ⭐ |
+| 4 | aggreg. | Margine medio per categoria di bevanda | O5 | `GROUP BY` sul discriminante (t,d) della generalizzazione | |
+| 5 | aggreg. | Top N bevande più vendute in un intervallo di date, per una cantina | O5 | filtro `tipo='VENDITA'` + range `data_ora` + `GROUP BY`/`ORDER BY`/`LIMIT`; **usa l'indice `(id_cantina, data_ora)` di Sez. 12** → chiude il cerchio della progettazione fisica | sì |
 | 6 | aggreg. | Vini blend: vini composti da più di un vitigno, col numero di vitigni | — | `GROUP BY` + `HAVING COUNT(*) > 1` | |
-| 7 | subquery | Verifica della ridondanza controllata: giacenza memorizzata nel listino vs ricalcolata dai movimenti (carichi − scarichi) | — | subquery scalare/derivata di somma; verifica la denormalizzazione di Sez. 8 e collauda i trigger | ⭐ |
-| 8 | subquery | Bevande a listino mai vendute (o mai movimentate) | — | anti-join: `NOT EXISTS` **oppure** `LEFT JOIN … IS NULL` (mostrare le due formulazioni equivalenti) | |
+| 7 | subquery | Verifica della ridondanza controllata: giacenza memorizzata nel listino vs ricalcolata dai movimenti (carichi − scarichi) | — | subquery scalare/derivata di somma; verifica la denormalizzazione di Sez. 8 e collauda i trigger | sì |
+| 8 | subquery | Bevande a listino mai vendute (o mai movimentate) | — | anti-join con `NOT EXISTS` (equivalente a `LEFT JOIN … IS NULL`) | |
 | 9 | subquery | Il dipendente più attivo di ogni cantina (chi ha registrato più movimenti) | — | subquery sul massimo per gruppo | |
-| 10 | subquery | Bevande sotto la giacenza media della propria cantina (lista riordino) | O2 | **subquery correlata** | ⭐ |
+| 10 | subquery | Bevande sotto la giacenza media della propria cantina (lista riordino) | O2 | **subquery correlata** | sì |
 
-> **Ordine di scrittura consigliato:** prima la **7** (serve anche a collaudare il fix del
-> trigger sul carico senza listino), poi **5** e **10**; le restanti fino a 6-8 totali.
-> L'SQL di ciascuna query va inserito qui sotto man mano (una sottosezione per query, con la
-> query commentata e una riga sul costrutto).
+### 14.2 Implementazione
+
+Ogni query è incapsulata in una **stored procedure** in `05_queries.sql` (nome fra parentesi):
+questo soddisfa anche il requisito "programmabili" (t11), rende parametriche le query che lo
+richiedono (`IN p_...`) e offre un punto d'ingresso unico all'applicazione. Sotto si riporta
+lo `SELECT` centrale di ciascuna; tutte sono state verificate sul DB reale.
+
+**Q1 — Scheda tecnica di un vino** (`vino_tecnical_data(p_id)`). Un blend produce più righe,
+una per vitigno; il collasso in un'unica scheda è responsabilità del chiamante.
+
+```sql
+SELECT b.nome AS descrizione, v.doc, b.categoria, b.gradazione_alcolica, b.volume,
+       b.is_biologico, v.annata, v.colore, v.tipologia, v.metodo, v.tipo_blend,
+       v.tipo_denominazione, v.acidita, vi.mese_vendemmia, vi.giorni_macerazione,
+       vi.tipo_fermentazione, vi.tipo_vendemmia, vv.percentuale, vv.annata_vitigno,
+       vit.nome AS nome_vitigno, vit.sinonimo AS sinonimo_vitigno,
+       af.durata_legno_mesi, af.durata_bottiglia_mesi, af.tipo_legno, af.formato_legno,
+       p.nome AS nome_produttore, pa.nome_paese, r.nome_regione, r.zona
+FROM bevanda b
+INNER JOIN vino v            USING(id_bevanda)
+INNER JOIN vinificazione vi  USING(id_bevanda)
+INNER JOIN vino_vitigno vv   USING(id_bevanda)
+INNER JOIN vitigno vit       USING(id_vitigno)
+LEFT  JOIN affinamento af    USING(id_bevanda)   -- opzionale → LEFT
+INNER JOIN produttore p      USING(id_produttore)
+INNER JOIN regione r         USING(id_regione)
+INNER JOIN paese pa          USING(id_paese)
+WHERE id_bevanda = p_id;
+```
+
+**Q2 — Carta vini pronta per la stampa** (`carta_vini_stampa(p_cantina)`). `LEFT JOIN vino`
+perché l'annata esiste solo per i vini (NULL per eventuali bevande non-vino in carta).
+
+```sql
+SELECT b.nome AS descrizione, p.nome AS nome_produttore, l.prezzo_vendita, vino.annata
+FROM carta_vini cv
+INNER JOIN carta_vini_voce v USING(id_carta_vini)
+INNER JOIN listino l         USING(id_listino)
+INNER JOIN bevanda b         USING(id_bevanda)
+INNER JOIN produttore p      USING(id_produttore)
+LEFT  JOIN vino              USING(id_bevanda)
+WHERE cv.id_cantina = p_cantina AND cv.attivo = TRUE
+ORDER BY b.categoria, descrizione;
+```
+
+**Q3 — Valore di magazzino per cantina** (`valore_magazzino()`). `SUM` di un'espressione + `GROUP BY`.
+
+```sql
+SELECT l.id_cantina, SUM(l.giacenza * l.prezzo_acquisto) AS capitale_immobile
+FROM listino l
+GROUP BY l.id_cantina;
+```
+
+**Q4 — Margine medio per categoria** (`margine_per_categoria()`). `AVG` su espressione + `GROUP BY`.
+
+```sql
+SELECT b.categoria, AVG(l.prezzo_vendita - l.prezzo_acquisto) AS margine_medio
+FROM listino l
+INNER JOIN bevanda b USING(id_bevanda)
+GROUP BY b.categoria;
+```
+
+**Q5 — Top N venduti per cantina/intervallo** (`top_seller(p_cantina, p_start, p_end, p_n)`).
+Filtro `tipo='VENDITA'` + intervallo semi-aperto su `data_ora`: **usa l'indice `(id_cantina,
+data_ora)` di Sez. 12** → chiude il cerchio con la progettazione fisica.
+
+```sql
+SELECT m.id_bevanda, b.nome, SUM(m.quantita_bottiglie) AS totale_venduto
+FROM movimenti m
+INNER JOIN bevanda b USING(id_bevanda)
+WHERE m.tipo = 'VENDITA' AND m.id_cantina = p_cantina
+  AND m.data_ora >= p_start AND m.data_ora < p_end
+GROUP BY m.id_bevanda, b.nome
+ORDER BY totale_venduto DESC
+LIMIT p_n;
+```
+
+**Q6 — Vini blend** (`vini_blend()`). Filtro sull'**aggregato** con `HAVING COUNT > 1` (non su `WHERE`).
+
+```sql
+SELECT b.id_bevanda,
+       (SELECT COUNT(vv.id_vitigno) FROM vino v
+        INNER JOIN vino_vitigno vv USING(id_bevanda)
+        WHERE v.id_bevanda = b.id_bevanda) AS n_blend
+FROM bevanda b
+GROUP BY b.id_bevanda
+HAVING n_blend > 1;
+```
+
+**Q7 — Verifica della ridondanza controllata** (`verifica_ridondanza()`). Giacenza
+memorizzata vs ricalcolata dai movimenti; ogni somma è protetta da `IFNULL(..,0)` perché una
+`SUM` senza righe restituisce NULL. **0 righe = trigger corretti** → collaudo di Sez. 8.
+
+```sql
+SELECT l.id_cantina, l.id_bevanda, l.giacenza,
+       ( IFNULL((SELECT SUM(m.quantita_bottiglie) FROM movimenti m
+                 WHERE m.tipo IN ('CARICO','ACQUISTO')
+                   AND m.id_cantina = l.id_cantina AND m.id_bevanda = l.id_bevanda
+                 GROUP BY m.id_cantina, m.id_bevanda), 0)
+       - IFNULL((SELECT SUM(m.quantita_bottiglie) FROM movimenti m
+                 WHERE m.tipo IN ('SCARICO','VENDITA')
+                   AND m.id_cantina = l.id_cantina AND m.id_bevanda = l.id_bevanda
+                 GROUP BY m.id_cantina, m.id_bevanda), 0) ) AS giacenza_ricalcolata
+FROM listino l
+HAVING giacenza_ricalcolata <> l.giacenza;
+```
+
+**Q8 — Bevande mai vendute** (`bevande_mai_vendute()`). Anti-join con `NOT EXISTS`.
+
+```sql
+SELECT b.id_bevanda
+FROM bevanda b
+WHERE NOT EXISTS (SELECT 1 FROM movimenti m1
+                 WHERE b.id_bevanda = m1.id_bevanda AND m1.tipo = 'VENDITA');
+```
+
+**Q9 — Dipendente più attivo per cantina** (`dipendente_piu_attivo()`). Massimo per gruppo:
+due derived table **non correlate** in JOIN (MariaDB non supporta le LATERAL correlate); il
+JOIN su `(id_cantina, n = max_n)` mantiene eventuali pareggi.
+
+```sql
+SELECT conteggi.id_cantina, conteggi.id_dipendente, conteggi.n
+FROM (SELECT id_cantina, id_dipendente, COUNT(*) AS n
+      FROM movimenti GROUP BY id_cantina, id_dipendente) AS conteggi
+INNER JOIN (SELECT id_cantina, MAX(n) AS max_n
+            FROM (SELECT id_cantina, id_dipendente, COUNT(*) AS n
+                  FROM movimenti GROUP BY id_cantina, id_dipendente) AS t
+            GROUP BY id_cantina) AS massimi
+    ON massimi.id_cantina = conteggi.id_cantina AND conteggi.n = massimi.max_n
+ORDER BY conteggi.id_cantina;
+```
+
+**Q10 — Bevande sotto la giacenza media della propria cantina** (`bevande_sotto_media()`).
+Subquery **correlata**: la media è ricalcolata per la cantina di ciascuna riga.
+
+```sql
+SELECT l.id_bevanda, id_cantina, b.nome
+FROM listino l
+INNER JOIN bevanda b USING(id_bevanda)
+WHERE l.giacenza < (SELECT AVG(giacenza) FROM listino WHERE l.id_cantina = id_cantina);
+```
 
 ---

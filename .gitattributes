@@ -1,0 +1,7 @@
+# GitHub Linguist — statistiche dei linguaggi del repo
+# I file .sql sono classificati come type:data e di default NON compaiono nella
+# barra dei linguaggi: li forziamo "detectable" così SQL è visibile accanto a Python.
+*.sql linguist-detectable=true
+
+# Il lockfile è generato, non codice scritto a mano: fuori dalle statistiche.
+uv.lock linguist-generated=true

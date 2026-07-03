@@ -656,7 +656,7 @@ and **documented**. The course slides stop at 3NF: BCNF is not considered.
 
 ---
 
-## 12. Physical design
+## 12. Physical design and external schema
 
 > Input to this section: the logical schema (Sec. 10, already frozen) and the
 > **application load** (Sec. 7 — table of volumes and operations). In relational
@@ -722,6 +722,71 @@ indexes beyond the FKs already present.
 | `uq_listino_bevanda_cantina` (UNIQUE) | Listino | `(id_cantina, id_bevanda)` | O2 — consult stock, point access |
 | Composite PK `Contiene_voce` | Carta_vini_voce | `(id_carta_vini, id_listino)` | O3 — view wine list, ordered by entry |
 
+### 12.2 External schema: per-role views
+
+Beyond the logical schema (conceptual/logical level) and the physical one (internal
+level), the system defines an **external level** through views (`04_views.sql`). Each
+view is the external schema of an application **role**: it exposes only the pertinent
+and authorized columns, hiding the rest. This applies the **abstraction and security**
+principle of views (t09): permissions are granted on the *views*, not on the base
+tables, so a role never sees columns it is not entitled to. Views are **virtual**
+(re-executed on each access, not materialized copies of the data) and directly feed the
+per-role pages of the demo.
+
+| View | Role | Exposes | Hides |
+|---|---|---|---|
+| `v_giacenze_magazziniere` | warehouse clerk | cellar, beverage, category, producer, stock, sale price | financial data (cost, margin) |
+| `v_giacenze_titolare` | owner | as above **+** purchase price and margin | — (role with full visibility) |
+| `v_carta_vini_cameriere` | waiter | wine-list title, position, beverage, producer, sale price | only `pubblicata` and active lists; no stock/cost data |
+
+The first two start from the same base (`listino` joined with `bevanda`, `produttore`,
+`cantina`, filtered on `attivo`): the difference is **only in the set of columns**,
+which is exactly the point of views as an external schema. The third filters
+`stato = 'pubblicata' AND attivo` — the waiter sees only what is actually in service,
+not drafts or archived lists.
+
+```sql
+CREATE OR REPLACE VIEW v_giacenze_magazziniere AS
+    SELECT c.nome AS nome_cantina, b.nome AS descrizione_bevanda, b.categoria,
+           p.nome AS nome_produttore, l.giacenza, l.prezzo_vendita
+    FROM listino l
+    INNER JOIN bevanda b    USING(id_bevanda)
+    INNER JOIN produttore p USING(id_produttore)
+    INNER JOIN cantina c    USING(id_cantina)
+    WHERE l.attivo = TRUE AND b.attivo = TRUE
+    ORDER BY c.id_cantina, l.giacenza DESC;
+
+CREATE OR REPLACE VIEW v_giacenze_titolare AS
+    SELECT c.nome AS nome_cantina, b.nome AS descrizione_bevanda, b.categoria,
+           p.nome AS nome_produttore, l.giacenza, l.prezzo_vendita, l.prezzo_acquisto,
+           (l.prezzo_vendita - l.prezzo_acquisto) AS margine
+    FROM listino l
+    INNER JOIN bevanda b    USING(id_bevanda)
+    INNER JOIN produttore p USING(id_produttore)
+    INNER JOIN cantina c    USING(id_cantina)
+    WHERE l.attivo = TRUE AND b.attivo = TRUE
+    ORDER BY c.id_cantina, l.giacenza DESC;
+
+CREATE OR REPLACE VIEW v_carta_vini_cameriere AS
+    SELECT cv.titolo, c.nome AS cantina_di_provenienza, v.descrizione_posizione, v.ordine,
+           b.nome AS descrizione_bevanda, b.categoria, p.nome AS produttore, l.prezzo_vendita
+    FROM carta_vini cv
+    INNER JOIN cantina c         USING(id_cantina)
+    INNER JOIN carta_vini_voce v USING(id_carta_vini)
+    INNER JOIN listino l         USING(id_listino)
+    INNER JOIN bevanda b         USING(id_bevanda)
+    INNER JOIN produttore p      USING(id_produttore)
+    WHERE cv.stato = 'pubblicata' AND cv.attivo = TRUE
+      AND l.attivo = TRUE AND b.attivo = TRUE
+    ORDER BY cv.titolo, v.ordine;
+```
+
+> **Consistency note:** in `v_carta_vini_cameriere` the cellar shown is that of the list
+> (`carta_vini.id_cantina`), while the price comes from the listino entry: the two
+> coincide only if the constraint "entries of a list in the same cellar" (Sec. 5) holds,
+> not yet enforced by a trigger (Sec. 13.2) — as long as it is guaranteed at the
+> application level, the view is correct.
+
 ---
 
 ## 13. Procedural constraints (triggers)
@@ -740,9 +805,11 @@ indexes beyond the FKs already present.
 Implements the second constraint of the "Stock / movements" group in Sec. 5 ("an
 unload/sale movement cannot exceed the beverage's current stock"). For movements
 of type `SCARICO`/`VENDITA`, it reads the current stock of the
-`(id_cantina, id_bevanda)` pair from `Listino` and, if insufficient relative to
-`NEW.quantita_bottiglie`, raises an application error (`SIGNAL SQLSTATE
-'45000'`) that prevents the movement from being inserted:
+`(id_cantina, id_bevanda)` pair from `Listino` into a local variable and raises
+an application error (`SIGNAL SQLSTATE '45000'`) that prevents the insert if the
+stock is **insufficient** relative to `NEW.quantita_bottiglie` **or nonexistent**
+(`v_giacenza IS NULL`: the pair is not in the listino, so there is nothing to
+unload):
 
 ```sql
 DELIMITER $$
@@ -750,11 +817,12 @@ CREATE TRIGGER oversell BEFORE INSERT
   ON movimenti
   FOR EACH ROW
   BEGIN
+    DECLARE v_giacenza INT DEFAULT NULL;
     IF NEW.tipo IN ('SCARICO','VENDITA') THEN
-      SELECT qr.giacenza INTO @giacenza FROM (SELECT l.giacenza FROM listino l
+      SELECT qr.giacenza INTO v_giacenza FROM (SELECT l.giacenza FROM listino l
       WHERE l.id_cantina = NEW.id_cantina AND l.id_bevanda = NEW.id_bevanda) as qr
       ;
-      IF @giacenza < NEW.quantita_bottiglie THEN
+      IF v_giacenza IS NULL OR v_giacenza < NEW.quantita_bottiglie THEN
         SIGNAL SQLSTATE '45000'
         SET MESSAGE_TEXT = 'Bottiglie insufficienti';
       END IF;
@@ -772,7 +840,16 @@ consistent with the sum of movements, updated automatically"). After a movement
 is inserted, it updates `Listino.giacenza` for the `(id_cantina, id_bevanda)`
 pair: increasing for `CARICO`/`ACQUISTO`, decreasing for `SCARICO`/`VENDITA`.
 Being `AFTER INSERT`, it only acts on movements already validated by
-`oversell`:
+`oversell` (unload side).
+
+On the **load** side, the `UPDATE` protects consistency by checking `ROW_COUNT()`
+right after: if it touched **0 rows**, the `(id_cantina, id_bevanda)` pair is not
+in the listino, so stock would be lost silently — the movement is therefore
+rejected with `SIGNAL` (and the INSERT rolled back). This is the design choice
+"first create the listino entry, then load": a load doesn't know prices, so it
+cannot auto-create the `Listino` row. The check is safe because
+`chk_movimenti_quantita` (`quantita_bottiglie > 0`) guarantees the `UPDATE`
+always modifies the row when it exists.
 
 ```sql
 DELIMITER $$
@@ -783,6 +860,10 @@ CREATE TRIGGER follow_up AFTER INSERT
     IF NEW.tipo IN ('CARICO', 'ACQUISTO') THEN
       UPDATE listino SET giacenza = giacenza + NEW.quantita_bottiglie
       WHERE id_cantina = NEW.id_cantina AND id_bevanda = NEW.id_bevanda;
+      IF ROW_COUNT() = 0 THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Carico su bevanda non presente nel listino della cantina';
+      END IF;
     END IF;
     IF NEW.tipo IN ('SCARICO', 'VENDITA') THEN
       UPDATE listino SET giacenza = giacenza - NEW.quantita_bottiglie
@@ -800,8 +881,9 @@ data and application logic verified directly on the DB (expected values
 
 *Verification performed:* both triggers loaded on the real DB; tested an unload
 insert exceeding available stock (correctly blocked by `oversell` with error
-1644/45000) and a valid insert (accepted, with `Listino.giacenza` correctly
-updated by `follow_up`).
+1644/45000), a load on a pair not present in the listino (blocked by `follow_up`
+via `ROW_COUNT() = 0`, with the INSERT rollback confirmed) and a valid insert
+(accepted, with `Listino.giacenza` correctly updated by `follow_up`).
 
 > **Scope: INSERT only.** Both triggers are on `INSERT`: `UPDATE` and `DELETE` on
 > `Movimenti` do not recompute stock. This is consistent with the **append-only**
@@ -819,11 +901,194 @@ tables** remain to be implemented, for which a trigger is needed (future work):
 
 | Constraint (Sec. 5) | Mechanism | Rationale | Status |
 |---|---|---|---|
-| Sale price >= purchase price | CHECK | comparison between columns of the same `Listino` row | ✅ done (`chk_listino_prezzo`) |
-| `ACQUISTO` movement requires a supplier, other types don't | CHECK | comparison between columns of the same `Movimenti` row | ✅ done (`chk_movimenti_acquisto`) |
-| Wine list: `data_pubblicazione >= data_creazione`, `data_archiviazione >= data_pubblicazione` | CHECK | comparison between columns of the same `Carta_vini` row | ✅ done (`chk_cartavini_date_pub`, `chk_cartavini_date_arch`) |
+| Sale price >= purchase price | CHECK | comparison between columns of the same `Listino` row | done (`chk_listino_prezzo`) |
+| `ACQUISTO` movement requires a supplier, other types don't | CHECK | comparison between columns of the same `Movimenti` row | done (`chk_movimenti_acquisto`) |
+| Wine list: `data_pubblicazione >= data_creazione`, `data_archiviazione >= data_pubblicazione` | CHECK | comparison between columns of the same `Carta_vini` row | done (`chk_cartavini_date_pub`, `chk_cartavini_date_arch`) |
 | Generalization consistency (t,d): `categoria` consistent with presence in `vino`/`birra`/`analcolico`/`super_alcolico` | trigger | requires reading the subtype tables, not just the current row | to do |
 | Grape variety percentages (`vino_vitigno.percentuale`) sum to 100% | trigger | aggregate over multiple rows of the same beverage | to do |
 | Cellar consistency between wine list and listino entries | trigger | requires traversing `Carta_vini_voce` -> `Listino` to compare cellar | to do |
+
+### 13.3 Concurrency: oversell / follow_up race condition (not handled — design note)
+
+`oversell`'s `SELECT` is a **non-blocking** read: two concurrent `VENDITA` movements on
+the same `(id_cantina, id_bevanda)` pair can both read the same stock (e.g. 5) and both
+pass the check, driving stock below zero. In this scenario the second `follow_up`
+`UPDATE` is still **rejected by the CHECK `chk_listino_giacenza` (`giacenza >= 0`) on
+`Listino`**, which acts as a safety net and preserves the invariant — but the error
+returned is the generic CHECK one, not the application message "Bottiglie insufficienti".
+
+The canonical solution would be a blocking `SELECT ... FOR UPDATE` read in the trigger,
+which serializes concurrent sales on the same listino row. It is not implemented (out of
+scope for a single-user project DB), but is documented here because the correctness of
+the invariant does not rely on luck: it is guaranteed downstream by the CHECK.
+
+---
+
+## 14. Example queries
+
+> The following queries exercise the schema, covering the required constructs (multiple
+> joins, aggregations, subqueries) and tying back to the sections already written: where
+> possible each query corresponds to an operation of table 7.2 and "demonstrates" a design
+> choice. Presentation: for each, the natural-language question, the corresponding 7.2
+> operation (where it exists) and the SQL construct demonstrated. **6-8 well-chosen queries
+> are enough**; priority to those marked as such in the «Prio» column, which tie the queries
+> to the rest of the design.
+
+### 14.1 Outline
+
+| # | Group | Question (natural language) | Op. 7.2 | Construct demonstrated | Prio |
+|---|---|---|---|---|---|
+| 1 | join | Full sheet of a wine: name, producer, region and country, grape varieties with percentages, ageing | O3 | longest join chain (bevanda→vino→vino_vitigno→vitigno, regione→paese); shows the 2NF Paese/Regione decomposition (Sec. 11) | |
+| 2 | join | Published wine list "ready to print": entries in order with beverage, producer and price | O3 | multiple joins + `WHERE stato='pubblicata'` + `ORDER BY`; it is the query behind the waiter's view (external schema) | |
+| 3 | aggreg. | Warehouse value per cellar: sum of stock × purchase price | O5 | `SUM(...)` + `GROUP BY` cellar | |
+| 4 | aggreg. | Average margin per beverage category | O5 | `GROUP BY` on the generalization discriminant (t,d) | |
+| 5 | aggreg. | Top N best-selling beverages in a date range, for a cellar | O5 | `tipo='VENDITA'` filter + `data_ora` range + `GROUP BY`/`ORDER BY`/`LIMIT`; **uses the `(id_cantina, data_ora)` index from Sec. 12** → closes the loop with physical design | yes |
+| 6 | aggreg. | Blend wines: wines made of more than one grape variety, with the count | — | `GROUP BY` + `HAVING COUNT(*) > 1` | |
+| 7 | subquery | Controlled-redundancy check: stock stored in the listino vs recomputed from movements (loads − unloads) | — | scalar/derived sum subquery; verifies the Sec. 8 denormalization and tests the triggers | yes |
+| 8 | subquery | Listino beverages never sold (or never moved) | — | anti-join with `NOT EXISTS` (equivalent to `LEFT JOIN … IS NULL`) | |
+| 9 | subquery | The most active employee of each cellar (who recorded the most movements) | — | subquery on the per-group maximum | |
+| 10 | subquery | Beverages below their cellar's average stock (reorder list) | O2 | **correlated subquery** | yes |
+
+### 14.2 Implementation
+
+Each query is wrapped in a **stored procedure** in `05_queries.sql` (name in parentheses):
+this also satisfies the "programmable" requirement (t11), parameterizes the queries that need
+it (`IN p_...`) and offers a single entry point to the application. Below is the core `SELECT`
+of each; all have been verified on the real DB.
+
+**Q1 — Technical sheet of a wine** (`vino_tecnical_data(p_id)`). A blend produces multiple
+rows, one per grape variety; collapsing them into a single sheet is the caller's responsibility.
+
+```sql
+SELECT b.nome AS descrizione, v.doc, b.categoria, b.gradazione_alcolica, b.volume,
+       b.is_biologico, v.annata, v.colore, v.tipologia, v.metodo, v.tipo_blend,
+       v.tipo_denominazione, v.acidita, vi.mese_vendemmia, vi.giorni_macerazione,
+       vi.tipo_fermentazione, vi.tipo_vendemmia, vv.percentuale, vv.annata_vitigno,
+       vit.nome AS nome_vitigno, vit.sinonimo AS sinonimo_vitigno,
+       af.durata_legno_mesi, af.durata_bottiglia_mesi, af.tipo_legno, af.formato_legno,
+       p.nome AS nome_produttore, pa.nome_paese, r.nome_regione, r.zona
+FROM bevanda b
+INNER JOIN vino v            USING(id_bevanda)
+INNER JOIN vinificazione vi  USING(id_bevanda)
+INNER JOIN vino_vitigno vv   USING(id_bevanda)
+INNER JOIN vitigno vit       USING(id_vitigno)
+LEFT  JOIN affinamento af    USING(id_bevanda)   -- optional → LEFT
+INNER JOIN produttore p      USING(id_produttore)
+INNER JOIN regione r         USING(id_regione)
+INNER JOIN paese pa          USING(id_paese)
+WHERE id_bevanda = p_id;
+```
+
+**Q2 — Wine list ready to print** (`carta_vini_stampa(p_cantina)`). `LEFT JOIN vino` because the
+vintage exists only for wines (NULL for any non-wine beverage in the list).
+
+```sql
+SELECT b.nome AS descrizione, p.nome AS nome_produttore, l.prezzo_vendita, vino.annata
+FROM carta_vini cv
+INNER JOIN carta_vini_voce v USING(id_carta_vini)
+INNER JOIN listino l         USING(id_listino)
+INNER JOIN bevanda b         USING(id_bevanda)
+INNER JOIN produttore p      USING(id_produttore)
+LEFT  JOIN vino              USING(id_bevanda)
+WHERE cv.id_cantina = p_cantina AND cv.attivo = TRUE
+ORDER BY b.categoria, descrizione;
+```
+
+**Q3 — Warehouse value per cellar** (`valore_magazzino()`). `SUM` of an expression + `GROUP BY`.
+
+```sql
+SELECT l.id_cantina, SUM(l.giacenza * l.prezzo_acquisto) AS capitale_immobile
+FROM listino l
+GROUP BY l.id_cantina;
+```
+
+**Q4 — Average margin per category** (`margine_per_categoria()`). `AVG` over an expression + `GROUP BY`.
+
+```sql
+SELECT b.categoria, AVG(l.prezzo_vendita - l.prezzo_acquisto) AS margine_medio
+FROM listino l
+INNER JOIN bevanda b USING(id_bevanda)
+GROUP BY b.categoria;
+```
+
+**Q5 — Top N sold per cellar/range** (`top_seller(p_cantina, p_start, p_end, p_n)`).
+`tipo='VENDITA'` filter + half-open range on `data_ora`: **uses the `(id_cantina, data_ora)`
+index from Sec. 12** → closes the loop with physical design.
+
+```sql
+SELECT m.id_bevanda, b.nome, SUM(m.quantita_bottiglie) AS totale_venduto
+FROM movimenti m
+INNER JOIN bevanda b USING(id_bevanda)
+WHERE m.tipo = 'VENDITA' AND m.id_cantina = p_cantina
+  AND m.data_ora >= p_start AND m.data_ora < p_end
+GROUP BY m.id_bevanda, b.nome
+ORDER BY totale_venduto DESC
+LIMIT p_n;
+```
+
+**Q6 — Blend wines** (`vini_blend()`). Filter on the **aggregate** with `HAVING COUNT > 1` (not `WHERE`).
+
+```sql
+SELECT b.id_bevanda,
+       (SELECT COUNT(vv.id_vitigno) FROM vino v
+        INNER JOIN vino_vitigno vv USING(id_bevanda)
+        WHERE v.id_bevanda = b.id_bevanda) AS n_blend
+FROM bevanda b
+GROUP BY b.id_bevanda
+HAVING n_blend > 1;
+```
+
+**Q7 — Controlled-redundancy check** (`verifica_ridondanza()`). Stored vs recomputed stock; each
+sum is protected by `IFNULL(..,0)` because a `SUM` over no rows returns NULL. **0 rows = triggers
+correct** → the Sec. 8 test.
+
+```sql
+SELECT l.id_cantina, l.id_bevanda, l.giacenza,
+       ( IFNULL((SELECT SUM(m.quantita_bottiglie) FROM movimenti m
+                 WHERE m.tipo IN ('CARICO','ACQUISTO')
+                   AND m.id_cantina = l.id_cantina AND m.id_bevanda = l.id_bevanda
+                 GROUP BY m.id_cantina, m.id_bevanda), 0)
+       - IFNULL((SELECT SUM(m.quantita_bottiglie) FROM movimenti m
+                 WHERE m.tipo IN ('SCARICO','VENDITA')
+                   AND m.id_cantina = l.id_cantina AND m.id_bevanda = l.id_bevanda
+                 GROUP BY m.id_cantina, m.id_bevanda), 0) ) AS giacenza_ricalcolata
+FROM listino l
+HAVING giacenza_ricalcolata <> l.giacenza;
+```
+
+**Q8 — Beverages never sold** (`bevande_mai_vendute()`). Anti-join with `NOT EXISTS`.
+
+```sql
+SELECT b.id_bevanda
+FROM bevanda b
+WHERE NOT EXISTS (SELECT 1 FROM movimenti m1
+                 WHERE b.id_bevanda = m1.id_bevanda AND m1.tipo = 'VENDITA');
+```
+
+**Q9 — Most active employee per cellar** (`dipendente_piu_attivo()`). Per-group maximum: two
+**non-correlated** derived tables joined (MariaDB does not support correlated LATERAL); the join
+on `(id_cantina, n = max_n)` keeps any ties.
+
+```sql
+SELECT conteggi.id_cantina, conteggi.id_dipendente, conteggi.n
+FROM (SELECT id_cantina, id_dipendente, COUNT(*) AS n
+      FROM movimenti GROUP BY id_cantina, id_dipendente) AS conteggi
+INNER JOIN (SELECT id_cantina, MAX(n) AS max_n
+            FROM (SELECT id_cantina, id_dipendente, COUNT(*) AS n
+                  FROM movimenti GROUP BY id_cantina, id_dipendente) AS t
+            GROUP BY id_cantina) AS massimi
+    ON massimi.id_cantina = conteggi.id_cantina AND conteggi.n = massimi.max_n
+ORDER BY conteggi.id_cantina;
+```
+
+**Q10 — Beverages below their cellar's average stock** (`bevande_sotto_media()`). **Correlated**
+subquery: the average is recomputed for each row's cellar.
+
+```sql
+SELECT l.id_bevanda, id_cantina, b.nome
+FROM listino l
+INNER JOIN bevanda b USING(id_bevanda)
+WHERE l.giacenza < (SELECT AVG(giacenza) FROM listino WHERE l.id_cantina = id_cantina);
+```
 
 ---

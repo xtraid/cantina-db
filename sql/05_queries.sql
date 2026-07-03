@@ -6,7 +6,7 @@
 
 USE cantina;
 
--- Q7 ⭐ — Verifica della ridondanza controllata: giacenza memorizzata in listino
+-- Q7 — Verifica della ridondanza controllata: giacenza memorizzata in listino
 -- vs ricalcolata dai movimenti (Σ carichi − Σ scarichi). 0 righe = trigger corretti.
 DELIMITER $$
 DROP PROCEDURE IF EXISTS verifica_ridondanza$$
@@ -25,14 +25,14 @@ CREATE PROCEDURE verifica_ridondanza ()
                    m.id_cantina = l.id_cantina AND
                    m.id_bevanda = l.id_bevanda
              GROUP BY m.id_cantina, m.id_bevanda
-             ),0)) AS giacienza_ricalcolata
+             ),0)) AS giacenza_ricalcolata
             FROM listino l
-            HAVING  giacienza_ricalcolata <> l.giacenza;
+            HAVING  giacenza_ricalcolata <> l.giacenza;
     END$$
 DELIMITER ;
 
 
--- Q5 ⭐ — Top N bevande più vendute in un intervallo di date, per una cantina.
+-- Q5 — Top N bevande più vendute in un intervallo di date, per una cantina.
 -- Usa l'indice (id_cantina, data_ora) di Sez. 12.
 DELIMITER $$
 DROP PROCEDURE IF EXISTS top_seller$$
@@ -48,7 +48,7 @@ CREATE PROCEDURE top_seller (IN p_cantina INT, IN p_start DATETIME, IN p_end DAT
 DELIMITER ;
 
 
--- Q10 ⭐ — Bevande sotto la giacenza media della propria cantina (lista riordino).
+-- Q10 — Bevande sotto la giacenza media della propria cantina (lista riordino).
 DELIMITER $$
 DROP PROCEDURE IF EXISTS bevande_sotto_media$$
 CREATE PROCEDURE bevande_sotto_media ()
@@ -129,7 +129,7 @@ DELIMITER $$
 DROP PROCEDURE IF EXISTS margine_per_categoria$$
 CREATE PROCEDURE margine_per_categoria ()
     BEGIN
-        SELECT b.categoria, AVG(l.prezzo_vendita - l.prezzo_acquisto) as margine_medio_vino FROM listino l
+        SELECT b.categoria, AVG(l.prezzo_vendita - l.prezzo_acquisto) as margine_medio FROM listino l
         INNER JOIN bevanda b using (id_bevanda)
         GROUP BY b.categoria;
     END$$
