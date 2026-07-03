@@ -1133,4 +1133,24 @@ on any `SIGNAL`/error) that satisfies the conceptual-model constraints in one sh
 Declared simplification: at creation a wine gets **a single grape variety**; blends (>1 grape)
 and enrichment of the remaining attributes are deferred to a future edit operation.
 
+### 14.4 Write procedure: `crea_dipendente`
+
+Similar to `crea_bevanda` but on a single table (`dipendente`); it encapsulates two
+**authorization/integrity** checks at the DB level, so they hold for a direct call too, not
+just through the UI:
+
+- **Valid role**: `SIGNAL` if `p_ruolo` is not one of `titolare`/`magazziniere`/`cameriere`
+  (the `ruolo` column has no CHECK in the schema, so the constraint is enforced here).
+- **Per-company scoping**: it receives the logged-in owner's `id_azienda` and rejects with a
+  `SIGNAL` ('Cantina fuori dalla tua azienda') any `p_id_cantina` that does not belong to that
+  company. This is the *server-side* counterpart of the application filter in Sec. 12.2.1: the
+  dropdown only shows the company's cellars, and the SP enforces it anyway (defense in depth).
+
+The **password is never handled in clear text by the DB**: the app computes the bcrypt hash
+(`bcrypt.hashpw`) and passes only `p_password_hash` to the SP.
+
+> **Known limitation:** onboarding a **new company** is not exposed in the app (which scopes
+> every operation to the logged-in user's company): for now it requires a **database
+> super-user** to create it via SQL/seed (see `06_seed_azienda2.sql`).
+
 ---

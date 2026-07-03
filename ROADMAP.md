@@ -34,7 +34,10 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do
 - [x] App: Sec.14 stored procedures runnable per role (toggle) + per-cantina row scoping
 - [x] App: movement registration (load/sale -> stock moves live; oversell shown to the user)
 - [x] App: catalog writes — add beverage to price list; create a new beverage (bevanda+subtype+producer, wine details) atomically via `crea_bevanda` SP (Sec. 14.3)
-- [ ] App: permissions demo (GRANT/REVOKE, real DB roles)                 ← topic09
+- [x] App: owner adds employees via `crea_dipendente` SP — role guard + per-company scoping (UI dropdown + server-side SIGNAL); bcrypt hashing app-side (Sec. 14.4)
+- [x] App: split into modules (`db` / `auth` / `forms` / `pages` / `app`)
+- [x] `06_seed_azienda2.sql` — second company, to exercise per-company scoping
+- [ ] App: permissions tab (GRANT/REVOKE, real DB roles) + new-company onboarding (currently DBA-only)   ← topic09
 - [ ] README polish — app screenshot / short gif
 
 ---
@@ -64,6 +67,10 @@ each role page runs its Sec.14 stored procedures (via a toggle) and is **row-sco
 the employee's own cellar** (owner: to their company's cellars). The app now **writes**:
 the warehouse page registers movements (load/sale → stock moves live via the triggers,
 oversell surfaced to the user), adds beverages to a price list, and creates brand-new
-beverages atomically (`crea_bevanda`, Sec. 14.3). Next: the GRANT/REVOKE permissions demo
-and README polish. Note: row scoping is enforced at the application level; DB-level
-enforcement (GRANT/REVOKE per role) is still future work.
+beverages atomically (`crea_bevanda`, Sec. 14.3); the owner adds employees
+(`crea_dipendente`, Sec. 14.4) with a role guard and per-company scoping enforced both in
+the UI and server-side. The app has been **split into modules** (`db`/`auth`/`forms`/`pages`/
+`app`), and `06_seed_azienda2.sql` adds a second company so the scoping is demonstrable.
+Next: the GRANT/REVOKE permissions tab and README polish. Two acknowledged limits: row
+scoping is enforced at the application level (DB-level GRANT/REVOKE per role is future work),
+and onboarding a new company is DBA-only (not exposed in the app).

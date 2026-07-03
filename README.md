@@ -46,8 +46,9 @@ Full E-R schema and design rationale in
   each tied back to a design choice (Sec. 14) and **runnable in-app** via a
   per-role toggle.
 - **Streamlit demo**: employee login, per-cellar stock and wine-list consultation
-  (row-scoped to the employee's own cellar), plus stock-movement registration and
-  atomic catalog writes (new beverage / price-list entry).
+  (row-scoped to the employee's own cellar), stock-movement registration, atomic
+  catalog writes (new beverage / price-list entry) and owner-side employee creation
+  — all scoped to the user's company both in the UI and server-side in the procedures.
 
 ## Stack
 
@@ -66,8 +67,14 @@ cantina-db/
 │   ├── 02_triggers.sql    # stock maintenance (follow_up) + oversell guard
 │   ├── 03_seed.sql        # realistic sample data (stock derived via triggers)
 │   ├── 04_views.sql       # per-role views (warehouse / owner / waiter)
-│   └── 05_queries_and_sp.sql  # 10 example queries + app write procedures (all stored procedures)
-├── app/                   # Streamlit application (login + one page per role)
+│   ├── 05_queries_and_sp.sql  # 10 example queries + app write procedures (all stored procedures)
+│   └── 06_seed_azienda2.sql   # second company (demo data for per-company scoping)
+├── app/                   # Streamlit application
+│   ├── db.py              # connection + query/write helpers
+│   ├── auth.py            # employee login
+│   ├── forms.py           # write forms (movement / price-list / new beverage / new employee)
+│   ├── pages.py           # per-role pages (owner / warehouse / waiter)
+│   └── app.py             # entry point: login gate, session, role routing
 ├── docs/
 │   ├── progettazione.md   # design document IT (requirements -> logical -> 3NF -> physical -> triggers)
 │   ├── progettazione.en.md# design document EN
@@ -86,7 +93,21 @@ mariadb -u <user> -p cantina < sql/01_schema.sql
 mariadb -u <user> -p cantina < sql/02_triggers.sql
 mariadb -u <user> -p cantina < sql/03_seed.sql
 mariadb -u <user> -p cantina < sql/04_views.sql
+mariadb -u <user> -p cantina < sql/05_queries_and_sp.sql   # stored procedures (queries + app writes)
+mariadb -u <user> -p cantina < sql/06_seed_azienda2.sql    # second company (scoping demo)
 ```
+
+### Demo credentials
+
+Two companies, to show per-company scoping. Passwords are demo-only.
+
+| Company | Username | Role | Password |
+|---|---|---|---|
+| Enoteca Adriatica | `g.bernardi` | owner | `cantina2026` |
+| Enoteca Adriatica | `m.ferri` | warehouse | `cantina2026` |
+| Enoteca Adriatica | `s.conti` | waiter | `cantina2026` |
+| Enoteca Adriatica | `l.rossi` | warehouse (cellar 2) | `cantina2026` |
+| Cantine del Sole | `m.verdi` | owner | `verdi123` |
 
 > ℹ️ The numeric order is significant: triggers (`02`) load **before** the seed
 > (`03`) because stock (`giacenza`) is not hardcoded — it starts at 0 and is built
@@ -100,9 +121,12 @@ queries (stored procedures) complete and validated on MariaDB; the design docume
 (owner / warehouse / waiter), each **row-scoped to its own cellar** and able to run
 its Sec. 14 stored-procedure queries via a toggle. The app now **writes**:
 movement registration (load/sale → stock kept live by the triggers, oversell surfaced
-to the user), price-list entries, and atomic new-beverage creation (`crea_bevanda`,
-Sec. 14.3). Still to come: the GRANT/REVOKE role demo and the remaining trigger-based
-constraints (docs Sec. 13.2).
+to the user), price-list entries, atomic new-beverage creation (`crea_bevanda`, Sec. 14.3)
+and owner-side employee creation (`crea_dipendente`, Sec. 14.4) scoped to the owner's
+company. The app is **split into modules** (`db`/`auth`/`forms`/`pages`/`app`) and a second
+company (`06_seed_azienda2.sql`) demonstrates per-company scoping. Still to come: the
+GRANT/REVOKE role demo (and new-company onboarding, currently DBA-only) and the remaining
+trigger-based constraints (docs Sec. 13.2).
 
 ---
 
@@ -144,7 +168,9 @@ Schema E-R completo e scelte di progetto in
   ciascuna agganciata a una scelta di progetto (Sez. 14) ed **eseguibili
   nell'app** tramite un toggle per ruolo.
 - **Demo Streamlit**: login per dipendente, consultazione giacenze e carte vini,
-  filtrata sulla cantina di competenza del dipendente.
+  registrazione movimenti, scritture atomiche sul catalogo (nuova bevanda / voce di
+  listino) e creazione dipendenti lato titolare — tutto filtrato sull'azienda
+  dell'utente, sia in UI sia lato server nelle procedure.
 
 ### Stato
 
@@ -154,9 +180,13 @@ progettazione (IT + EN) è completo. L'app Streamlit ha il login dipendente e un
 pagina per ruolo (titolare / magazziniere / cameriere), ciascuna **filtrata sulla
 propria cantina** e con le query stored-procedure della Sez. 14 eseguibili tramite
 toggle. L'app ora **scrive**: registrazione movimenti (carico/vendita → giacenza
-aggiornata dai trigger, oversell mostrato all'utente), aggiunta a listino e creazione
-di una bevanda nuova in modo atomico (`crea_bevanda`, Sez. 14.3). Ancora da fare: la
-demo dei permessi GRANT/REVOKE e i vincoli via trigger rimanenti (documento Sez. 13.2).
+aggiornata dai trigger, oversell mostrato all'utente), aggiunta a listino, creazione
+atomica di una bevanda nuova (`crea_bevanda`, Sez. 14.3) e creazione dipendenti lato
+titolare (`crea_dipendente`, Sez. 14.4) filtrata sull'azienda. L'app è **divisa in
+moduli** (`db`/`auth`/`forms`/`pages`/`app`) e una seconda azienda
+(`06_seed_azienda2.sql`) dimostra lo scoping per azienda. Ancora da fare: la demo dei
+permessi GRANT/REVOKE (e l'onboarding di una nuova azienda, per ora solo via DBA) e i
+vincoli via trigger rimanenti (documento Sez. 13.2).
 
 > ℹ️ L'ordine numerico è significativo: i trigger (`02`) si caricano **prima** del
 > seed (`03`) perché la giacenza non è scritta a mano — parte da 0 e viene costruita

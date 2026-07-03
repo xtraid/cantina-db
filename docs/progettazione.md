@@ -1037,4 +1037,24 @@ Semplificazione dichiarata: alla creazione il vino riceve **un solo vitigno**; i
 vitigno) e l'arricchimento dei restanti attributi sono demandati a una futura operazione di
 modifica.
 
+### 14.4 Procedura di scrittura: `crea_dipendente`
+
+Analoga a `crea_bevanda` ma su una sola tabella (`dipendente`); incapsula due controlli di
+**autorizzazione e integrità** lato DB, così che valgano anche per una chiamata diretta e non
+solo tramite la UI:
+
+- **Ruolo valido**: `SIGNAL` se `p_ruolo` non è uno tra `titolare`/`magazziniere`/`cameriere`
+  (la colonna `ruolo` non ha un CHECK nello schema, quindi il vincolo è imposto qui).
+- **Scoping per azienda**: riceve l'`id_azienda` del titolare loggato e rifiuta con `SIGNAL`
+  ('Cantina fuori dalla tua azienda') qualunque `p_id_cantina` non appartenente a quell'azienda.
+  È la controparte *server-side* del filtro applicativo di Sez. 12.2.1: la tendina mostra solo
+  le cantine dell'azienda, e la SP lo impone comunque (difesa in profondità).
+
+La **password non è mai gestita in chiaro dal DB**: l'app calcola l'hash bcrypt
+(`bcrypt.hashpw`) e passa alla SP solo `p_password_hash`.
+
+> **Limite noto:** l'onboarding di una **nuova azienda** non è esposto nell'app (che scopa
+> ogni operazione sull'azienda dell'utente loggato): al momento richiede un **super-user del
+> database** che la crei via SQL/seed (cfr. `06_seed_azienda2.sql`).
+
 ---

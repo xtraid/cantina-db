@@ -279,3 +279,38 @@ CREATE PROCEDURE crea_bevanda (
         SELECT v_id_bevanda AS id_bevanda;
     END$$
 DELIMITER ;
+
+
+-- crea_dipendente — inserisce un nuovo dipendente.
+-- NB: la password NON viene hashata qui: p_password_hash arriva già come hash
+-- bcrypt calcolato dall'applicazione.
+DELIMITER $$
+DROP PROCEDURE IF EXISTS crea_dipendente$$
+CREATE PROCEDURE crea_dipendente (
+    IN p_matricola      INT,
+    IN p_nome           VARCHAR(100),
+    IN p_cognome        VARCHAR(100),
+    IN p_ruolo          VARCHAR(100),
+    IN p_username       VARCHAR(100),
+    IN p_password_hash  VARCHAR(255),
+    IN p_email          VARCHAR(255),
+    IN p_id_cantina     INT,
+
+    IN p_id_azienda     INT
+)
+    BEGIN
+        IF p_ruolo NOT IN ('titolare','magazziniere','cameriere') THEN
+            SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Ruolo non valido';
+        END IF;
+        IF (SELECT id_azienda FROM cantina WHere id_cantina = p_id_cantina ) <> p_id_azienda THEN
+             SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Cantina fuori dalla tua azienda';
+        END IF;
+        INsert INTO dipendente
+            (matricola, nome, cognome, ruolo, username, password_hash, email, id_cantina)
+        VALUES
+            (p_matricola, p_nome, p_cognome, p_ruolo, p_username, p_password_hash,
+             p_email, p_id_cantina);
+
+        SELECT LAST_INSERT_ID() AS id_dipendente;
+    END$$
+DELIMITER ;
