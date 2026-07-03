@@ -28,3 +28,14 @@ def run_query(sql, params=None):
             return cur.fetchall()
     finally:
         conn.close()
+
+
+def call_proc(name, args=()):
+    """Calls store procedure and returns the result records"""
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.callproc(name, args)
+            return cur.fetchall()
+    finally:
+        conn.close()

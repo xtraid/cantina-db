@@ -8,7 +8,7 @@
 USE cantina;
 
 CREATE OR REPLACE VIEW v_giacenze_magazziniere AS
-    SELECT c.nome as nome_cantina, b.nome as descrizione_bevanda, b.categoria, p.nome as nome_produttore, l.giacenza, l.prezzo_vendita from listino l
+    SELECT c.id_cantina, c.nome as nome_cantina, b.nome as descrizione_bevanda, b.categoria, p.nome as nome_produttore, l.giacenza, l.prezzo_vendita from listino l
     INNER JOIN bevanda b using(id_bevanda)
     INNER JOIN produttore p using(id_produttore)
     INNER JOIN cantina c using(id_cantina)
@@ -16,7 +16,7 @@ CREATE OR REPLACE VIEW v_giacenze_magazziniere AS
     ORDER BY c.id_cantina, l.giacenza desc;
 
 CREATE OR REPLACE VIEW v_giacenze_titolare AS
-    SELECT c.nome as nome_cantina, b.nome as descrizione_bevanda, b.categoria,
+    SELECT c.id_azienda, c.id_cantina, c.nome as nome_cantina, b.nome as descrizione_bevanda, b.categoria,
            p.nome as nome_produttore, l.giacenza, l.prezzo_vendita, l.prezzo_acquisto,
            (l.prezzo_vendita - l.prezzo_acquisto) as margine
             FROM listino l
@@ -28,7 +28,7 @@ CREATE OR REPLACE VIEW v_giacenze_titolare AS
 
 
 CREATE OR REPLACE VIEW v_carta_vini_cameriere AS
-    SELECT cv.titolo, c.nome as cantina_di_provenienza, v.descrizione_posizione,
+    SELECT c.id_cantina, cv.titolo, c.nome as cantina_di_provenienza, v.descrizione_posizione,
            v.ordine, b.nome as descrizione_bevanda, b.categoria, p.nome as produttore,
            l.prezzo_vendita
            FROM  carta_vini cv

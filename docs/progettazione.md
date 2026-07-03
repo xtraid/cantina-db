@@ -654,7 +654,7 @@ cameriere vede solo ciò che è effettivamente in servizio, non le bozze o le ca
 
 ```sql
 CREATE OR REPLACE VIEW v_giacenze_magazziniere AS
-    SELECT c.nome AS nome_cantina, b.nome AS descrizione_bevanda, b.categoria,
+    SELECT c.id_cantina, c.nome AS nome_cantina, b.nome AS descrizione_bevanda, b.categoria,
            p.nome AS nome_produttore, l.giacenza, l.prezzo_vendita
     FROM listino l
     INNER JOIN bevanda b    USING(id_bevanda)
@@ -664,7 +664,7 @@ CREATE OR REPLACE VIEW v_giacenze_magazziniere AS
     ORDER BY c.id_cantina, l.giacenza DESC;
 
 CREATE OR REPLACE VIEW v_giacenze_titolare AS
-    SELECT c.nome AS nome_cantina, b.nome AS descrizione_bevanda, b.categoria,
+    SELECT c.id_azienda, c.id_cantina, c.nome AS nome_cantina, b.nome AS descrizione_bevanda, b.categoria,
            p.nome AS nome_produttore, l.giacenza, l.prezzo_vendita, l.prezzo_acquisto,
            (l.prezzo_vendita - l.prezzo_acquisto) AS margine
     FROM listino l
@@ -675,7 +675,7 @@ CREATE OR REPLACE VIEW v_giacenze_titolare AS
     ORDER BY c.id_cantina, l.giacenza DESC;
 
 CREATE OR REPLACE VIEW v_carta_vini_cameriere AS
-    SELECT cv.titolo, c.nome AS cantina_di_provenienza, v.descrizione_posizione, v.ordine,
+    SELECT c.id_cantina, cv.titolo, c.nome AS cantina_di_provenienza, v.descrizione_posizione, v.ordine,
            b.nome AS descrizione_bevanda, b.categoria, p.nome AS produttore, l.prezzo_vendita
     FROM carta_vini cv
     INNER JOIN cantina c         USING(id_cantina)
@@ -693,6 +693,28 @@ CREATE OR REPLACE VIEW v_carta_vini_cameriere AS
 > coincidono solo se vale il vincolo "voci di una carta nella stessa cantina" (Sez. 5), non
 > ancora imposto da trigger (Sez. 13.2) — finché è garantito a livello applicativo la vista è
 > corretta.
+
+#### 12.2.1 Scoping per cantina (livello applicativo)
+
+Le viste espongono anche gli identificativi `id_cantina` (e `id_azienda` per il titolare):
+non sono dati "di dominio" ma **chiavi di filtro**. Nota il dipendente loggato, l'applicazione
+restringe la vista alla sua competenza:
+
+- **magazziniere** e **cameriere** → alla propria cantina: `WHERE id_cantina = ?`
+  (`?` = `dipendente.id_cantina` dell'utente in sessione);
+- **titolare** → alle cantine della propria azienda:
+  `WHERE id_azienda = (SELECT id_azienda FROM cantina WHERE id_cantina = ?)`.
+
+Due precisazioni importanti:
+
+- Il filtro è **applicativo**, non un vero controllo d'accesso: la demo si connette con un
+  **unico** utente MariaDB che tecnicamente vede tutto. L'enforcement a livello di DB
+  (`GRANT`/`REVOKE` per ruolo sulle viste) è lo schema esterno "forte" e resta un'estensione
+  prevista.
+- La proprietà del titolare è **derivata dalla cantina di assegnazione**
+  (`dipendente.id_cantina → cantina.id_azienda`), perché `azienda.titolare` è un attributo
+  **testuale** e non una FK verso `dipendente`. Con una sola azienda nel seed le due letture
+  coincidono; il modello "pieno" richiederebbe una FK `azienda.id_titolare → dipendente`.
 
 ---
 

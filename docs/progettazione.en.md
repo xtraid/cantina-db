@@ -747,7 +747,7 @@ not drafts or archived lists.
 
 ```sql
 CREATE OR REPLACE VIEW v_giacenze_magazziniere AS
-    SELECT c.nome AS nome_cantina, b.nome AS descrizione_bevanda, b.categoria,
+    SELECT c.id_cantina, c.nome AS nome_cantina, b.nome AS descrizione_bevanda, b.categoria,
            p.nome AS nome_produttore, l.giacenza, l.prezzo_vendita
     FROM listino l
     INNER JOIN bevanda b    USING(id_bevanda)
@@ -757,7 +757,7 @@ CREATE OR REPLACE VIEW v_giacenze_magazziniere AS
     ORDER BY c.id_cantina, l.giacenza DESC;
 
 CREATE OR REPLACE VIEW v_giacenze_titolare AS
-    SELECT c.nome AS nome_cantina, b.nome AS descrizione_bevanda, b.categoria,
+    SELECT c.id_azienda, c.id_cantina, c.nome AS nome_cantina, b.nome AS descrizione_bevanda, b.categoria,
            p.nome AS nome_produttore, l.giacenza, l.prezzo_vendita, l.prezzo_acquisto,
            (l.prezzo_vendita - l.prezzo_acquisto) AS margine
     FROM listino l
@@ -768,7 +768,7 @@ CREATE OR REPLACE VIEW v_giacenze_titolare AS
     ORDER BY c.id_cantina, l.giacenza DESC;
 
 CREATE OR REPLACE VIEW v_carta_vini_cameriere AS
-    SELECT cv.titolo, c.nome AS cantina_di_provenienza, v.descrizione_posizione, v.ordine,
+    SELECT c.id_cantina, cv.titolo, c.nome AS cantina_di_provenienza, v.descrizione_posizione, v.ordine,
            b.nome AS descrizione_bevanda, b.categoria, p.nome AS produttore, l.prezzo_vendita
     FROM carta_vini cv
     INNER JOIN cantina c         USING(id_cantina)
@@ -786,6 +786,28 @@ CREATE OR REPLACE VIEW v_carta_vini_cameriere AS
 > coincide only if the constraint "entries of a list in the same cellar" (Sec. 5) holds,
 > not yet enforced by a trigger (Sec. 13.2) — as long as it is guaranteed at the
 > application level, the view is correct.
+
+#### 12.2.1 Per-cellar scoping (application level)
+
+The views also expose the identifiers `id_cantina` (and `id_azienda` for the owner):
+these are not "domain" data but **filter keys**. Given the logged-in employee, the
+application restricts the view to their scope:
+
+- **warehouse clerk** and **waiter** → to their own cellar: `WHERE id_cantina = ?`
+  (`?` = the session user's `dipendente.id_cantina`);
+- **owner** → to the cellars of their own company:
+  `WHERE id_azienda = (SELECT id_azienda FROM cantina WHERE id_cantina = ?)`.
+
+Two important caveats:
+
+- The filter is at the **application level**, not real access control: the demo connects
+  with a **single** MariaDB user that technically sees everything. DB-level enforcement
+  (`GRANT`/`REVOKE` per role on the views) is the "strong" external schema and remains a
+  planned extension.
+- The owner's ownership is **derived from the assigned cellar**
+  (`dipendente.id_cantina → cantina.id_azienda`), because `azienda.titolare` is a **textual**
+  attribute and not an FK to `dipendente`. With a single company in the seed the two readings
+  coincide; the "full" model would require an FK `azienda.id_titolare → dipendente`.
 
 ---
 
