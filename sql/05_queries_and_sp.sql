@@ -10,7 +10,7 @@ USE cantina;
 -- vs ricalcolata dai movimenti (Σ carichi − Σ scarichi). 0 righe = trigger corretti.
 DELIMITER $$
 DROP PROCEDURE IF EXISTS verifica_ridondanza$$
-CREATE PROCEDURE verifica_ridondanza ()
+CREATE PROCEDURE verifica_ridondanza (IN p_id_azienda INT)
     BEGIN
         SELECT l.id_cantina,
                l.id_bevanda,
@@ -27,6 +27,7 @@ CREATE PROCEDURE verifica_ridondanza ()
              GROUP BY m.id_cantina, m.id_bevanda
              ),0)) AS giacenza_ricalcolata
             FROM listino l
+            WHERE l.id_cantina IN (SELECT id_cantina FROM cantina WHERE id_azienda = p_id_azienda)
             HAVING  giacenza_ricalcolata <> l.giacenza;
     END$$
 DELIMITER ;
@@ -51,11 +52,13 @@ DELIMITER ;
 -- Q10 — Bevande sotto la giacenza media della propria cantina (lista riordino).
 DELIMITER $$
 DROP PROCEDURE IF EXISTS bevande_sotto_media$$
-CREATE PROCEDURE bevande_sotto_media ()
+CREATE PROCEDURE bevande_sotto_media (IN p_id_cantina INT)
     BEGIN
-        SELECT l.id_bevanda, id_cantina, b.nome FROM listino  l
-            INNER JOIN bevanda b using (id_bevanda)
-            where l.giacenza < (SELECT avg(giacenza) from listino where l.id_cantina = id_cantina);
+        SELECT l.id_bevanda, l.id_cantina, b.nome
+        FROM listino l
+        INNER JOIN bevanda b USING(id_bevanda)
+        WHERE l.id_cantina = p_id_cantina
+          AND l.giacenza < (SELECT AVG(giacenza) FROM listino WHERE id_cantina = p_id_cantina);
     END$$
 DELIMITER ;
 
@@ -116,10 +119,12 @@ DELIMITER ;
 -- Q3 — Valore di magazzino per cantina: Σ (giacenza × prezzo di acquisto).
 DELIMITER $$
 DROP PROCEDURE IF EXISTS valore_magazzino$$
-CREATE PROCEDURE valore_magazzino ()
+CREATE PROCEDURE valore_magazzino (IN p_id_azienda INT)
     BEGIN
         SELECT l.id_cantina, sum(l.giacenza * l.prezzo_acquisto) as capitale_immobile from listino l
-        GROUP BY l.id_cantina;
+             INNER JOIN cantina c USING(id_cantina)
+            WHERE c.id_azienda = p_id_azienda
+            GROUP BY l.id_cantina;
     END$$
 DELIMITER ;
 
@@ -127,11 +132,13 @@ DELIMITER ;
 -- Q4 — Margine medio per categoria di bevanda: AVG(prezzo_vendita − prezzo_acquisto).
 DELIMITER $$
 DROP PROCEDURE IF EXISTS margine_per_categoria$$
-CREATE PROCEDURE margine_per_categoria ()
+CREATE PROCEDURE margine_per_categoria (IN p_id_azienda INT)
     BEGIN
         SELECT b.categoria, AVG(l.prezzo_vendita - l.prezzo_acquisto) as margine_medio FROM listino l
         INNER JOIN bevanda b using (id_bevanda)
-        GROUP BY b.categoria;
+            INNER JOIN cantina c USING(id_cantina)
+            WHERE c.id_azienda = p_id_azienda
+            GROUP BY b.categoria;
     END$$
 DELIMITER ;
 
@@ -155,11 +162,15 @@ DELIMITER ;
 -- Q8 — Bevande mai vendute (anti-join con NOT EXISTS).
 DELIMITER $$
 DROP PROCEDURE IF EXISTS bevande_mai_vendute$$
-CREATE PROCEDURE bevande_mai_vendute ()
+CREATE PROCEDURE bevande_mai_vendute (IN p_id_cantina INT)
     BEGIN
-        SELECT b.id_bevanda from bevanda b
-        where NOT EXISTS (SELECT 1 from movimenti m1
-                                       WHERE b.id_bevanda = m1.id_bevanda AND m1.tipo = 'VENDITA');
+        SELECT l.id_bevanda
+        FROM listino l
+        WHERE l.id_cantina = p_id_cantina
+          AND NOT EXISTS (SELECT 1 FROM movimenti m
+                          WHERE m.id_bevanda = l.id_bevanda
+                            AND m.id_cantina = p_id_cantina
+                            AND m.tipo = 'VENDITA');
     END$$
 DELIMITER ;
 
@@ -170,15 +181,17 @@ DELIMITER ;
 -- (id_cantina, n = max_n) tiene eventuali pareggi.
 DELIMITER $$
 DROP PROCEDURE IF EXISTS dipendente_piu_attivo$$
-CREATE PROCEDURE dipendente_piu_attivo ()
+CREATE PROCEDURE dipendente_piu_attivo (IN p_id_azienda INT)
     BEGIN
         SELECT conteggi.id_cantina, conteggi.id_dipendente, conteggi.n
         FROM (SELECT id_cantina, id_dipendente, COUNT(*) AS n
               FROM movimenti
+              WHERE id_cantina IN (SELECT id_cantina FROM cantina WHERE id_azienda = p_id_azienda)
               GROUP BY id_cantina, id_dipendente) AS conteggi
         INNER JOIN (SELECT id_cantina, MAX(n) AS max_n
                     FROM (SELECT id_cantina, id_dipendente, COUNT(*) AS n
                           FROM movimenti
+                          WHERE id_cantina IN (SELECT id_cantina FROM cantina WHERE id_azienda = p_id_azienda)
                           GROUP BY id_cantina, id_dipendente) AS t
                     GROUP BY id_cantina) AS massimi
             ON massimi.id_cantina = conteggi.id_cantina
