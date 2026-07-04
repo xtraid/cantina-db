@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pymysql
 import streamlit as st
 
@@ -28,7 +30,15 @@ def _ssl_options():
     TLS connection. Locally, with no `ssl_ca`, we connect in plaintext as
     before, so the same code runs against the local MariaDB unchanged."""
     ca = st.secrets["mysql"].get("ssl_ca")
-    return {"ssl_ca": ca} if ca else {}
+    if not ca:
+        return {}
+    # A relative path is resolved against the repo root (db.py lives in app/),
+    # so it works regardless of the process' working directory (e.g. Streamlit
+    # Community Cloud runs from the repo root, but this stays correct anyway).
+    ca_path = Path(ca)
+    if not ca_path.is_absolute():
+        ca_path = Path(__file__).resolve().parent.parent / ca_path
+    return {"ssl_ca": str(ca_path)}
 
 
 def get_connection():
