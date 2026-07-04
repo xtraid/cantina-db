@@ -1,3 +1,5 @@
+import json
+
 import bcrypt
 import streamlit as st
 
@@ -143,8 +145,11 @@ def new_beverage_form(u):
         )
 
     # Wine-only details: shown only when category is VINO
-    annata = colore = id_vitigno = percentuale = None
+    annata = colore = None
     mese_vendemmia = tipo_vendemmia = durata_legno = tipo_legno = None
+    vitigni_json = None
+    blend_rows = []
+    somma = 0
     if categoria == "VINO":
         st.markdown("**Wine details**")
         annata = st.number_input(
@@ -157,18 +162,30 @@ def new_beverage_form(u):
         )
         colore = st.text_input("Colour (optional)", key="nb_colore")
         vitigni = run_query("SELECT id_vitigno, nome FROM vitigno ORDER BY nome")
-        vit = st.selectbox(
-            "Grape variety", vitigni, format_func=lambda v: v["nome"], key="nb_vit"
+        nome2id = {v["nome"]: v["id_vitigno"] for v in vitigni}
+        st.markdown("**Grape blend** — percentages must add up to 100")
+        blend = st.data_editor(
+            [{"Grape": None, "%": 0.0}],
+            column_config={
+                "Grape": st.column_config.SelectboxColumn(
+                    options=list(nome2id), required=True
+                ),
+                "%": st.column_config.NumberColumn(
+                    min_value=0.0, max_value=100.0, required=True
+                ),
+            },
+            num_rows="dynamic",
+            hide_index=True,
+            key="nb_blend",
         )
-        id_vitigno = vit["id_vitigno"] if vit else None
-        percentuale = st.number_input(
-            "Grape %",
-            min_value=0.0,
-            max_value=100.0,
-            value=100.0,
-            step=1.0,
-            key="nb_perc",
-        )
+        blend_rows = [
+            {"id": nome2id[r["Grape"]], "pct": float(r["%"])}
+            for r in blend
+            if r.get("Grape") and r.get("%")
+        ]
+        somma = sum(r["pct"] for r in blend_rows)
+        st.caption(f"Total: {somma:g}%")
+        vitigni_json = json.dumps(blend_rows)
         mese_vendemmia = st.text_input("Harvest month (optional)", key="nb_mese")
         tipo_vendemmia = st.text_input("Harvest type (optional)", key="nb_tipovend")
         st.caption("Aging (optional)")
@@ -184,8 +201,11 @@ def new_beverage_form(u):
         if scelta_p["id_produttore"] is None and not prod_nome:
             st.error("New producer name is required.")
             return
-        if categoria == "VINO" and id_vitigno is None:
+        if categoria == "VINO" and not blend_rows:
             st.error("A wine needs at least one grape variety.")
+            return
+        if categoria == "VINO" and somma != 100:
+            st.error(f"Grape percentages must sum to 100 (now {somma:g}).")
             return
         try:
             rows = call_proc_write(
@@ -201,8 +221,7 @@ def new_beverage_form(u):
                     prod_paese or None,
                     annata,
                     colore or None,
-                    id_vitigno,
-                    percentuale,
+                    vitigni_json,
                     mese_vendemmia or None,
                     tipo_vendemmia or None,
                     durata_legno or None,

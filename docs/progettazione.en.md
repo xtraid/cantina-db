@@ -783,9 +783,9 @@ CREATE OR REPLACE VIEW v_carta_vini_cameriere AS
 
 > **Consistency note:** in `v_carta_vini_cameriere` the cellar shown is that of the list
 > (`carta_vini.id_cantina`), while the price comes from the listino entry: the two
-> coincide only if the constraint "entries of a list in the same cellar" (Sec. 5) holds,
-> not yet enforced by a trigger (Sec. 13.2) — as long as it is guaranteed at the
-> application level, the view is correct.
+> coincide thanks to the constraint "entries of a list in the same cellar" (Sec. 5),
+> enforced by the `carta_vini_coerenza_cantina` trigger (Sec. 13.2), which guarantees the
+> view is correct.
 
 #### 12.2.1 Per-cellar scoping (application level)
 
@@ -914,21 +914,31 @@ via `ROW_COUNT() = 0`, with the INSERT rollback confirmed) and a valid insert
 > opposite sign, not by modifying or deleting existing ones. Stock therefore stays
 > consistent with the sum of movements at all times.
 
-### 13.2 Other Sec. 5 constraints — CHECKs already present and triggers still to do
+### 13.2 Other Sec. 5 constraints — single-row CHECKs and multi-row triggers
 
-The Sec. 5 constraints expressible at the **single-row** level are already
-implemented as `CHECK` in `01_schema.sql` (evaluated by the engine on every
-insert/update). Only the constraints that require reading **other rows or other
-tables** remain to be implemented, for which a trigger is needed (future work):
+The Sec. 5 constraints expressible at the **single-row** level are implemented as
+`CHECK` in `01_schema.sql` (evaluated by the engine on every insert/update). The
+constraints that require reading **other rows or other tables** are implemented as
+triggers in `02_triggers.sql`:
 
 | Constraint (Sec. 5) | Mechanism | Rationale | Status |
 |---|---|---|---|
 | Sale price >= purchase price | CHECK | comparison between columns of the same `Listino` row | done (`chk_listino_prezzo`) |
 | `ACQUISTO` movement requires a supplier, other types don't | CHECK | comparison between columns of the same `Movimenti` row | done (`chk_movimenti_acquisto`) |
 | Wine list: `data_pubblicazione >= data_creazione`, `data_archiviazione >= data_pubblicazione` | CHECK | comparison between columns of the same `Carta_vini` row | done (`chk_cartavini_date_pub`, `chk_cartavini_date_arch`) |
-| Generalization consistency (t,d): `categoria` consistent with presence in `vino`/`birra`/`analcolico`/`super_alcolico` | trigger | requires reading the subtype tables, not just the current row | to do |
-| Grape variety percentages (`vino_vitigno.percentuale`) sum to 100% | trigger | aggregate over multiple rows of the same beverage | to do |
-| Cellar consistency between wine list and listino entries | trigger | requires traversing `Carta_vini_voce` -> `Listino` to compare cellar | to do |
+| Generalization consistency (t,d): `categoria` consistent with presence in `vino`/`birra`/`analcolico`/`super_alcolico` | trigger | requires reading the parent `bevanda` row from the subtype | done (`isa_vino`, `isa_birra`, `isa_super_alcolico`, `isa_analcolico`) |
+| Grape variety percentages (`vino_vitigno.percentuale`) sum to 100% | trigger + SP | aggregate over multiple rows of the same beverage | done — see note below (`vino_vitigno_somma` + `crea_bevanda`) |
+| Cellar consistency between wine list and listino entries | trigger | requires traversing `Carta_vini_voce` -> `Listino` to compare cellar | done (`carta_vini_coerenza_cantina`) |
+
+> **Note on the "percentages = 100%" constraint.** Exact equality is an aggregate over
+> multiple rows that are only complete once the whole blend is inserted: a row-by-row trigger
+> cannot enforce it without *deferred* constraints (absent in MariaDB), since it would already
+> reject the first row of every blend. The constraint is therefore realized on **two levels**:
+> (1) the `vino_vitigno_somma` trigger (`BEFORE INSERT`) is a model-level safety net, rejecting
+> any overshoot (`sum > 100`); (2) the `crea_bevanda` stored procedure (Sec. 14.3) receives the
+> **whole** blend as JSON and enforces exact equality `= 100` before writing. The app uses only
+> the SP and never inserts into `vino_vitigno` directly: the abstraction guarantees the
+> invariant, the trigger protects it from other writes.
 
 ### 13.3 Concurrency: oversell / follow_up race condition (not handled — design note)
 
@@ -1126,12 +1136,16 @@ on any `SIGNAL`/error) that satisfies the conceptual-model constraints in one sh
 - **Producer**: it optionally creates a new `produttore` (when no existing id is passed), since
   `bevanda.id_produttore` is NOT NULL.
 - **Wine constraints** (only when `categoria = 'VINO'`): it creates the `vinificazione`
-  (mandatory **1:1** participation) and at least one `vino_vitigno` (N:M "Composto" relation,
-  ≥1); `affinamento` (0:1) is inserted only if provided. A `SIGNAL 'Vitigno mancante per il vino'`
+  (mandatory **1:1** participation) and the **grape blend** (N:M "Composto" relation, ≥1);
+  `affinamento` (0:1) is inserted only if provided. A `SIGNAL 'Vitigno mancante per il vino'`
   guards the ≥1 rule.
 
-Declared simplification: at creation a wine gets **a single grape variety**; blends (>1 grape)
-and enrichment of the remaining attributes are deferred to a future edit operation.
+The blend is passed as a **JSON array** `[{"id": <id_vitigno>, "pct": <percentuale>}, …]`: the
+SP expands it with `JSON_TABLE`, checks that the percentages sum to **exactly 100**
+(`SIGNAL 'Le percentuali dei vitigni devono sommare a 100'`) and inserts all `vino_vitigno`
+rows with a single `INSERT ... SELECT`. The procedure is thus the **abstraction layer** that
+enforces the aggregate "= 100%" constraint (Sec. 13.2): the user sends the whole blend and
+never touches the `vino_vitigno` table directly.
 
 ### 14.4 Write procedure: `crea_dipendente`
 

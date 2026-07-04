@@ -9,6 +9,9 @@ consistent by triggers**, wine lists, and role-based employee access.*
 Born as a coursework project for **Databases** (University of Trieste) and
 extended with a working demo application.
 
+> ▶ **Want to try it?** Step-by-step UI walkthrough (with triggers/SPs live) in
+> [`DEMO.md`](DEMO.md).
+
 ---
 
 ## Domain in a nutshell
@@ -124,9 +127,11 @@ movement registration (load/sale → stock kept live by the triggers, oversell s
 to the user), price-list entries, atomic new-beverage creation (`crea_bevanda`, Sec. 14.3)
 and owner-side employee creation (`crea_dipendente`, Sec. 14.4) scoped to the owner's
 company. The app is **split into modules** (`db`/`auth`/`forms`/`pages`/`app`) and a second
-company (`06_seed_azienda2.sql`) demonstrates per-company scoping. Still to come: the
-GRANT/REVOKE role demo (and new-company onboarding, currently DBA-only) and the remaining
-trigger-based constraints (docs Sec. 13.2).
+company (`06_seed_azienda2.sql`) demonstrates per-company scoping. All **integrity triggers**
+of docs Sec. 13.2 are in place: generalization `(t,d)` coherence, wine-list ↔ price-list cellar
+consistency, and the grape-blend cap (with exact `= 100%` enforced by `crea_bevanda`, which now
+takes the whole blend as JSON). Still to come: the GRANT/REVOKE role demo (and new-company
+onboarding, currently DBA-only).
 
 ---
 
@@ -140,6 +145,9 @@ dipendenti con permessi per ruolo.
 
 Nato come elaborato per il corso di **Basi di Dati** (Università di Trieste) ed
 esteso con una demo applicativa funzionante.
+
+> ▶ **Vuoi provarlo?** Guida passo-passo all'interfaccia (con trigger/SP dal vivo)
+> in [`DEMO.md`](DEMO.md).
 
 ### Dominio in breve
 
@@ -184,9 +192,11 @@ aggiornata dai trigger, oversell mostrato all'utente), aggiunta a listino, creaz
 atomica di una bevanda nuova (`crea_bevanda`, Sez. 14.3) e creazione dipendenti lato
 titolare (`crea_dipendente`, Sez. 14.4) filtrata sull'azienda. L'app è **divisa in
 moduli** (`db`/`auth`/`forms`/`pages`/`app`) e una seconda azienda
-(`06_seed_azienda2.sql`) dimostra lo scoping per azienda. Ancora da fare: la demo dei
-permessi GRANT/REVOKE (e l'onboarding di una nuova azienda, per ora solo via DBA) e i
-vincoli via trigger rimanenti (documento Sez. 13.2).
+(`06_seed_azienda2.sql`) dimostra lo scoping per azienda. Tutti i **trigger di integrità**
+del documento Sez. 13.2 sono implementati: coerenza della generalizzazione `(t,d)`, coerenza di
+cantina fra carta vini e listino, e il tetto sul blend di vitigni (con l'uguaglianza esatta
+`= 100%` imposta da `crea_bevanda`, che ora riceve il blend intero come JSON). Ancora da fare:
+la demo dei permessi GRANT/REVOKE (e l'onboarding di una nuova azienda, per ora solo via DBA).
 
 > ℹ️ L'ordine numerico è significativo: i trigger (`02`) si caricano **prima** del
 > seed (`03`) perché la giacenza non è scritta a mano — parte da 0 e viene costruita

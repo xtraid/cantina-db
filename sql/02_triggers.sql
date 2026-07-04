@@ -39,4 +39,81 @@ CREATE TRIGGER follow_up AFTER INSERT
      END IF;
   END$$
 
+
+CREATE TRIGGER carta_vini_coerenza_cantina BEFORE INSERT
+    ON carta_vini_voce
+    FOR EACH ROW
+    BEGIN
+        DECLARE v_cantina_carta INT;
+        DECLARE v_cantina_listino INT;
+
+        SELECT id_cantina INTO v_cantina_carta
+            FROM carta_vini
+            WHERE id_carta_vini = NEW.id_carta_vini;
+
+        SELECT id_cantina INTO v_cantina_listino
+            From listino
+            WHERE id_listino = NEW.id_listino;
+        IF v_cantina_carta <> v_cantina_listino THEN
+            SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Voce di listino di una cantina diversa da quella della carta';
+        end if;
+    end $$
+
+CREATE TRIGGER isa_vino BEFORE INSERT
+    ON vino
+    FOR EACH ROW
+    BEGIN
+        IF (SELECT categoria FROM bevanda WHERE id_bevanda = NEW.id_bevanda) <> 'VINO' THEN
+            SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Categoria incoerente: la bevanda non è VINO';
+        END IF;
+
+    END $$
+
+CREATE TRIGGER isa_birra BEFORE INSERT
+    ON birra
+    FOR EACH ROW
+    BEGIN
+        IF (SELECT categoria FROM bevanda WHERE id_bevanda = NEW.id_bevanda) <> 'BIRRA' THEN
+            SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Categoria incoerente: la bevanda non è BIRRA';
+        END IF;
+    END $$
+
+CREATE TRIGGER isa_super_alcolico BEFORE INSERT
+    ON super_alcolico
+    FOR EACH ROW
+    BEGIN
+        IF (SELECT categoria FROM bevanda WHERE id_bevanda = NEW.id_bevanda) <> 'SUPER_ALCOLICO' THEN
+            SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Categoria incoerente: la bevanda non è SUPER_ALCOLICO';
+        END IF;
+    END $$
+
+CREATE TRIGGER isa_analcolico BEFORE INSERT
+    ON analcolico
+    FOR EACH ROW
+    BEGIN
+        IF (SELECT categoria FROM bevanda WHERE id_bevanda = NEW.id_bevanda) <> 'ANALCOLICO' THEN
+            SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Categoria incoerente: la bevanda non è ANALCOLICO';
+        END IF;
+    END $$
+
+CREATE TRIGGER vino_vitigno_somma BEFORE INSERT
+    ON vino_vitigno
+    FOR EACH ROW
+    BEGIN
+        DECLARE  v_somma DECIMAL(5,2);
+
+        SELECT COALESCE(SUM(percentuale), 0) INTO v_somma
+            FROM vino_vitigno
+            WHERE id_bevanda = NEW.id_bevanda;
+        IF v_somma + COALESCE(NEW.percentuale, 0) > 100 THEN
+            SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'La somma delle percentuali dei vitigni supera 100';
+        END IF;
+    END $$
+
 DELIMITER ;

@@ -214,8 +214,7 @@ CREATE PROCEDURE crea_bevanda (
     -- Parametri del solo VINO (NULL per le altre categorie)
     IN p_annata            SMALLINT,
     IN p_colore            VARCHAR(50),
-    IN p_id_vitigno        INT,
-    IN p_percentuale       DECIMAL(5,2),
+    IN p_vitigni_json      TEXT,
     IN p_mese_vendemmia    VARCHAR(20),
     IN p_tipo_vendemmia    VARCHAR(100),
     IN p_durata_legno_mesi SMALLINT,
@@ -248,17 +247,31 @@ CREATE PROCEDURE crea_bevanda (
         -- Sottotipo obbligatorio (generalizzazione totale)
         IF p_categoria = 'VINO' THEN
             -- vino deve avere >= 1 vitigno (relazione N:M "Composto")
-            IF p_id_vitigno IS NULL THEN
+            IF p_vitigni_json IS NULL OR JSON_LENGTH(p_vitigni_json) = 0 THEN
                 SIGNAL SQLSTATE '45000'
                     SET MESSAGE_TEXT = 'Vitigno mancante per il vino';
             END IF;
+            -- il blend deve sommare ESATTAMENTE a 100
+            IF ( SELECT SUM(pct) FROM JSON_TABLE(
+                     p_vitigni_json, '$[*]'
+                     COLUMNS (id_vitigno INT PATH '$.id', pct DECIMAL(5,2) PATH '$.pct')
+                 ) AS jt ) <> 100 THEN
+                SIGNAL SQLSTATE '45000'
+                    SET MESSAGE_TEXT = 'Le percentuali dei vitigni devono sommare a 100';
+            END IF;
+
             INSERT INTO vino (id_bevanda, annata, colore)
             VALUES (v_id_bevanda, p_annata, p_colore);
             -- vinificazione: partecipazione 1:1 obbligatoria
             INSERT INTO vinificazione (mese_vendemmia, tipo_vendemmia, id_bevanda)
             VALUES (p_mese_vendemmia, p_tipo_vendemmia, v_id_bevanda);
+            -- tutto il blend in una insert set-based
             INSERT INTO vino_vitigno (id_bevanda, id_vitigno, percentuale)
-            VALUES (v_id_bevanda, p_id_vitigno, p_percentuale);
+            SELECT v_id_bevanda, jt.id_vitigno, jt.pct
+            FROM JSON_TABLE(
+                p_vitigni_json, '$[*]'
+                COLUMNS (id_vitigno INT PATH '$.id', pct DECIMAL(5,2) PATH '$.pct')
+            ) AS jt;
             -- affinamento: opzionale (0:1) -> inserito solo se fornito
             IF p_durata_legno_mesi IS NOT NULL
                OR (p_tipo_legno IS NOT NULL AND p_tipo_legno <> '') THEN

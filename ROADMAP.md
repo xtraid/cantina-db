@@ -16,7 +16,7 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do
 - [x] Normalization — 1NF/2NF/3NF verified; deliberate denormalizations documented
 - [x] Normalization refinement — Paese/Regione decomposition (2NF)
 - [x] **Physical design** — load-justified secondary index on `movimenti` (topic15); documented in Sec. 12
-- [x] Procedural constraints — `oversell` + `follow_up` triggers (Sec. 13); row-level CHECKs already in schema
+- [x] Procedural constraints — `oversell` + `follow_up` triggers **plus** the Sec. 13.2 integrity triggers: `(t,d)` coherence (`isa_*`), wine-list ↔ price-list cellar consistency, grape-blend cap; row-level CHECKs already in schema
 - [x] External schema — per-role views documented (Sec. 12.2)
 - [x] Example queries — 10 as stored procedures (Sec. 14): joins, aggregations, subqueries
 - [ ] Assembly + compression to <=15pp, then PDF export
@@ -37,8 +37,10 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do
 - [x] App: owner adds employees via `crea_dipendente` SP — role guard + per-company scoping (UI dropdown + server-side SIGNAL); bcrypt hashing app-side (Sec. 14.4)
 - [x] App: split into modules (`db` / `auth` / `forms` / `pages` / `app`)
 - [x] `06_seed_azienda2.sql` — second company, to exercise per-company scoping
+- [x] Sec. 13.2 integrity triggers (`(t,d)`, wine-list/price-list cellar, blend cap) + `crea_bevanda` refactored to take the whole grape blend as JSON (exact `= 100%`); multi-grape UI (`st.data_editor`)   ← also Track A (sec. 5/13)
+- [x] `DEMO.md` — bilingual UI walkthrough (per-role tour; triggers/SPs live)
 - [ ] App: permissions tab (GRANT/REVOKE, real DB roles) + new-company onboarding (currently DBA-only)   ← topic09
-- [ ] README polish — app screenshot / short gif
+- [ ] README/DEMO polish — capture the screenshots referenced in `DEMO.md`
 
 ---
 
@@ -71,6 +73,10 @@ beverages atomically (`crea_bevanda`, Sec. 14.3); the owner adds employees
 (`crea_dipendente`, Sec. 14.4) with a role guard and per-company scoping enforced both in
 the UI and server-side. The app has been **split into modules** (`db`/`auth`/`forms`/`pages`/
 `app`), and `06_seed_azienda2.sql` adds a second company so the scoping is demonstrable.
-Next: the GRANT/REVOKE permissions tab and README polish. Two acknowledged limits: row
-scoping is enforced at the application level (DB-level GRANT/REVOKE per role is future work),
-and onboarding a new company is DBA-only (not exposed in the app).
+All **Sec. 13.2 integrity triggers** are now in place and validated (`(t,d)` coherence,
+wine-list/price-list cellar consistency, grape-blend cap), and `crea_bevanda` was refactored
+into the abstraction layer that takes the whole grape blend as JSON and enforces exact `= 100%`
+(multi-grape UI via `st.data_editor`). A bilingual UI walkthrough lives in `DEMO.md`.
+Next: the GRANT/REVOKE permissions tab and capturing the `DEMO.md` screenshots. Two acknowledged
+limits: row scoping is enforced at the application level (DB-level GRANT/REVOKE per role is
+future work), and onboarding a new company is DBA-only (not exposed in the app).

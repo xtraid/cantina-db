@@ -690,9 +690,8 @@ CREATE OR REPLACE VIEW v_carta_vini_cameriere AS
 
 > **Nota di coerenza:** in `v_carta_vini_cameriere` la cantina mostrata è quella della carta
 > (`carta_vini.id_cantina`), mentre il prezzo proviene dalla voce di listino: le due
-> coincidono solo se vale il vincolo "voci di una carta nella stessa cantina" (Sez. 5), non
-> ancora imposto da trigger (Sez. 13.2) — finché è garantito a livello applicativo la vista è
-> corretta.
+> coincidono grazie al vincolo "voci di una carta nella stessa cantina" (Sez. 5), imposto dal
+> trigger `carta_vini_coerenza_cantina` (Sez. 13.2), che garantisce la correttezza della vista.
 
 #### 12.2.1 Scoping per cantina (livello applicativo)
 
@@ -816,21 +815,31 @@ con `Listino.giacenza` aggiornata correttamente da `follow_up`).
 > modificando o eliminando quelli esistenti. La giacenza resta quindi sempre coerente con la
 > somma dei movimenti.
 
-### 13.2 Altri vincoli di Sez. 5 — CHECK già presenti e trigger ancora da fare
+### 13.2 Altri vincoli di Sez. 5 — CHECK di singola riga e trigger multi-riga
 
-I vincoli di Sez. 5 esprimibili a livello di **singola riga** sono già implementati come
-`CHECK` in `01_schema.sql` (valutati dal motore a ogni inserimento/modifica). Restano da
-implementare solo i vincoli che richiedono di leggere **altre righe o altre tabelle**, per i
-quali serve un trigger (lavoro futuro):
+I vincoli di Sez. 5 esprimibili a livello di **singola riga** sono implementati come
+`CHECK` in `01_schema.sql` (valutati dal motore a ogni inserimento/modifica). I vincoli che
+richiedono di leggere **altre righe o altre tabelle** sono implementati come trigger in
+`02_triggers.sql`:
 
 | Vincolo (Sez. 5) | Meccanismo | Motivazione | Stato |
 |---|---|---|---|
 | Prezzo di vendita ≥ prezzo di acquisto | CHECK | confronto fra colonne della stessa riga di `Listino` | fatto (`chk_listino_prezzo`) |
 | Movimento `ACQUISTO` richiede fornitore, altri tipi no | CHECK | confronto fra colonne della stessa riga di `Movimenti` | fatto (`chk_movimenti_acquisto`) |
 | Carta vini: `data_pubblicazione >= data_creazione`, `data_archiviazione >= data_pubblicazione` | CHECK | confronto fra colonne della stessa riga di `Carta_vini` | fatto (`chk_cartavini_date_pub`, `chk_cartavini_date_arch`) |
-| Coerenza generalizzazione (t,d): `categoria` coerente con la presenza in `vino`/`birra`/`analcolico`/`super_alcolico` | trigger | richiede di leggere le tabelle dei sottotipi, non solo la riga corrente | da fare |
-| Percentuali vitigni (`vino_vitigno.percentuale`) sommano a 100% | trigger | aggregato su più righe della stessa bevanda | da fare |
-| Coerenza di cantina fra carta vini e voci di listino | trigger | richiede di attraversare `Carta_vini_voce` → `Listino` per confrontare la cantina | da fare |
+| Coerenza generalizzazione (t,d): `categoria` coerente con la presenza in `vino`/`birra`/`analcolico`/`super_alcolico` | trigger | richiede di leggere la riga padre di `bevanda` dal sottotipo | fatto (`isa_vino`, `isa_birra`, `isa_super_alcolico`, `isa_analcolico`) |
+| Percentuali vitigni (`vino_vitigno.percentuale`) sommano a 100% | trigger + SP | aggregato su più righe della stessa bevanda | fatto — vedi nota sotto (`vino_vitigno_somma` + `crea_bevanda`) |
+| Coerenza di cantina fra carta vini e voci di listino | trigger | richiede di attraversare `Carta_vini_voce` → `Listino` per confrontare la cantina | fatto (`carta_vini_coerenza_cantina`) |
+
+> **Nota sul vincolo "percentuali = 100%".** L'uguaglianza esatta è un aggregato su più righe
+> completate solo a fine inserimento del blend: un trigger riga-per-riga non può imporla senza
+> vincoli *deferred* (assenti in MariaDB), perché rifiuterebbe già la prima riga di ogni blend.
+> Il vincolo è quindi realizzato su **due livelli**: (1) il trigger `vino_vitigno_somma`
+> (`BEFORE INSERT`) fa da rete di sicurezza a livello di modello, rifiutando qualsiasi
+> superamento (`somma > 100`); (2) la stored procedure `crea_bevanda` (Sez. 14.3) riceve il
+> blend **intero** come JSON e impone l'uguaglianza esatta `= 100` prima di scrivere. L'app usa
+> solo la SP e non inserisce mai direttamente in `vino_vitigno`: l'astrazione garantisce
+> l'invariante, il trigger lo protegge da scritture diverse.
 
 ### 13.3 Concorrenza: race condition oversell / follow_up (non gestita — nota di progetto)
 
@@ -1030,12 +1039,15 @@ del modello concettuale:
 - **Produttore**: opzionalmente crea un `produttore` nuovo (se non è passato un id esistente),
   perché `bevanda.id_produttore` è NOT NULL.
 - **Vincoli del vino** (solo se `categoria = 'VINO'`): crea la `vinificazione` (partecipazione
-  **1:1** obbligatoria) e almeno un `vino_vitigno` (relazione N:M "Composto", ≥1); l'`affinamento`
+  **1:1** obbligatoria) e il **blend di vitigni** (relazione N:M "Composto", ≥1); l'`affinamento`
   (0:1) è inserito solo se fornito. Un `SIGNAL 'Vitigno mancante per il vino'` protegge il ≥1.
 
-Semplificazione dichiarata: alla creazione il vino riceve **un solo vitigno**; i blend (>1
-vitigno) e l'arricchimento dei restanti attributi sono demandati a una futura operazione di
-modifica.
+Il blend è passato come **array JSON** `[{"id": <id_vitigno>, "pct": <percentuale>}, …]`: la SP
+lo espande con `JSON_TABLE`, verifica che le percentuali sommino **esattamente a 100**
+(`SIGNAL 'Le percentuali dei vitigni devono sommare a 100'`) e inserisce tutte le righe di
+`vino_vitigno` con un'unica `INSERT ... SELECT`. La procedura è così il **layer di astrazione**
+che impone il vincolo aggregato "= 100%" (Sez. 13.2): l'utente manda il blend completo e non
+tocca mai direttamente la tabella `vino_vitigno`.
 
 ### 14.4 Procedura di scrittura: `crea_dipendente`
 
