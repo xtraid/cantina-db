@@ -127,7 +127,7 @@ CREATE TABLE vitigno (
 CREATE TABLE bevanda (
     id_bevanda          INT AUTO_INCREMENT PRIMARY KEY,
     nome                VARCHAR(255) NOT NULL,
-    categoria           VARCHAR(100),          -- discriminante (t,d)
+    categoria           VARCHAR(100) NOT NULL,          -- discriminante (t,d)
     gradazione_alcolica DECIMAL(5,2),
     volume              DECIMAL(8,2),
     is_biologico        BOOLEAN DEFAULT FALSE,

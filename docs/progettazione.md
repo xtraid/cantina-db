@@ -841,6 +841,12 @@ richiedono di leggere **altre righe o altre tabelle** sono implementati come tri
 > solo la SP e non inserisce mai direttamente in `vino_vitigno`: l'astrazione garantisce
 > l'invariante, il trigger lo protegge da scritture diverse.
 
+> **Ambito: solo `INSERT`.** Come `oversell`/`follow_up` (Sez. 13.1), anche i trigger di
+> integrità di questa sezione coprono il solo `INSERT`: un `UPDATE` diretto su
+> `vino_vitigno.percentuale`, `bevanda.categoria` o `listino.id_cantina` li aggirerebbe.
+> Scelta deliberata: l'applicazione non espone quegli `UPDATE` e la copertura completa
+> richiederebbe trigger speculari senza aggiungere contenuto progettuale.
+
 ### 13.3 Concorrenza: race condition oversell / follow_up (non gestita — nota di progetto)
 
 La `SELECT` di `oversell` è una lettura **non bloccante**: due movimenti di `VENDITA`

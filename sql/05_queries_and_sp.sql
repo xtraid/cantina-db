@@ -88,8 +88,8 @@ CREATE PROCEDURE vino_tecnical_data (IN p_id INT)
         INNER JOIN vitigno vit using(id_vitigno)
         LEFT JOIN affinamento af using (id_bevanda)
         INNER JOIN produttore p using(id_produttore)
-        INNER JOIN regione r using(id_regione)
-        INNER JOIN paese pa USING(id_paese)
+        LEFT JOIN regione r using(id_regione)
+        LEFT JOIN paese pa USING(id_paese)
         WHERE id_bevanda = p_id;
     END$$
 DELIMITER ;

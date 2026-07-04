@@ -121,11 +121,14 @@ INSERT INTO vino_vitigno (id_bevanda, id_vitigno, percentuale, annata_vitigno) V
 (3, 2, 70.0, 2018), (3, 3, 30.0, 2018), -- Bordeaux: Cab.Sauv 70 + Merlot 30
 (4, 4, 100.0, 2017);                 -- Rioja: Tempranillo 100%
 
--- vinificazione / affinamento (solo alcuni vini)
+-- vinificazione: 1:1 obbligatoria, una riga per ogni vino
 INSERT INTO vinificazione (id_vinificazione, mese_vendemmia, giorni_macerazione, tipo_fermentazione, tipo_vendemmia, id_bevanda) VALUES
 (1, 'ottobre', 30, 'spontanea', 'manuale', 1),
-(2, 'ottobre', 25, 'spontanea', 'manuale', 2);
+(2, 'ottobre', 25, 'spontanea', 'manuale', 2),
+(3, 'settembre', 21, 'controllata', 'meccanica', 3),
+(4, 'ottobre',   28, 'controllata', 'manuale',   4);
 
+-- affinamento: 0:1 opzionale (solo alcuni vini)
 INSERT INTO affinamento (id_affinamento, durata_legno_mesi, durata_bottiglia_mesi, tipo_legno, formato_legno, id_bevanda) VALUES
 (1, 24, 12, 'rovere di Slavonia', 'botte grande', 1);
 

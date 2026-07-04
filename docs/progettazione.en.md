@@ -940,6 +940,12 @@ triggers in `02_triggers.sql`:
 > the SP and never inserts into `vino_vitigno` directly: the abstraction guarantees the
 > invariant, the trigger protects it from other writes.
 
+> **Scope: `INSERT` only.** Like `oversell`/`follow_up` (Sec. 13.1), the integrity triggers
+> in this section cover `INSERT` only: a direct `UPDATE` on `vino_vitigno.percentuale`,
+> `bevanda.categoria` or `listino.id_cantina` would bypass them. A deliberate choice: the
+> application exposes none of those `UPDATE`s, and full coverage would require mirror
+> triggers without adding design content.
+
 ### 13.3 Concurrency: oversell / follow_up race condition (not handled — design note)
 
 `oversell`'s `SELECT` is a **non-blocking** read: two concurrent `VENDITA` movements on

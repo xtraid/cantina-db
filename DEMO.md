@@ -218,6 +218,9 @@ ROLLBACK;
 - The exact `= 100` on the grape blend is enforced by the `crea_bevanda` SP; the
   `vino_vitigno` trigger is a safety net guaranteeing only `≤ 100` (exact equality
   isn't enforceable row-by-row without *deferred* constraints).
+- The parameterless Sec. 14 analytical queries (`valore_magazzino`,
+  `dipendente_piu_attivo`, `bevande_sotto_media`, …) are **deliberately global**
+  (exam-demonstrative): they are not scoped to the viewer's company.
 
 ---
 
@@ -426,3 +429,6 @@ ROLLBACK;
 - Il `= 100` esatto sul blend vitigni è imposto dalla SP `crea_bevanda`; il
   trigger `vino_vitigno` fa da rete di sicurezza garantendo solo `≤ 100`
   (l'uguaglianza esatta non è imponibile riga-per-riga senza vincoli *deferred*).
+- Le query analitiche di Sez. 14 senza parametri (`valore_magazzino`,
+  `dipendente_piu_attivo`, `bevande_sotto_media`, …) sono **volutamente globali**
+  (a scopo dimostrativo d'esame): non sono filtrate sull'azienda di chi le esegue.

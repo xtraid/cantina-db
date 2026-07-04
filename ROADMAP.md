@@ -42,6 +42,34 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` to do
 - [ ] App: permissions tab (GRANT/REVOKE, real DB roles) + new-company onboarding (currently DBA-only)   ← topic09
 - [ ] README/DEMO polish — capture the screenshots referenced in `DEMO.md`
 
+## Track B — Public demo deploy (so the professor can interact with it)
+
+Architecture: **Streamlit Community Cloud** (app, deploys from GitHub) +
+**Aiven free-tier MySQL** (managed DB). Risk to verify: Aiven is MySQL 8, not
+MariaDB — loading the 6 SQL files is the compatibility test (triggers/SPs/
+JSON_TABLE all exist in MySQL 8). Do **not** use TiDB/PlanetScale (no triggers,
+no stored procedures). Fallback: VPS with real MariaDB in Docker.
+
+- [ ] **Phase 0 — prerequisites**: commit the review fixes; decide whether the
+      demo URL goes **inside the deliverable PDF** (then phases 1-2 must happen
+      before the export) or only in the README
+- [ ] **Phase 1 — managed DB** (~45 min): Aiven MySQL free tier; load `01→06`
+      remotely (TLS required); verify 8 triggers / 12 procedures /
+      `verifica_ridondanza()` = 0 rows; *(optional, closes the GRANT/REVOKE
+      item above)* dedicated `cantina_app` user with least-privilege grants
+      (SELECT/INSERT/UPDATE on tables + EXECUTE on SPs)
+- [ ] **Phase 2 — app on Streamlit Cloud** (~30 min): optional TLS support in
+      `db.py` (pymysql `ssl` from secrets); `requirements.txt` at repo root;
+      deploy `app/app.py` from GitHub; paste the `[mysql]` block in the
+      dashboard Secrets (never in the repo)
+- [ ] **Phase 3 — demo hardening** (~30 min): reset one-liner (reload `01→06`
+      remotely — the professor *writes*); test from an external network with
+      all 3 roles (movement + rejected oversell); demo URL + credentials in
+      `README.md`/`DEMO.md`; known quirk: Community Cloud apps sleep, first
+      load takes ~30-60 s
+- [ ] **Phase 4 — wrap-up**: capture the `DEMO.md` screenshots from the
+      deployed demo; tick deploy (+ GRANT/REVOKE if done) here
+
 ---
 
 ## Why this order (sync points)
@@ -77,6 +105,7 @@ All **Sec. 13.2 integrity triggers** are now in place and validated (`(t,d)` coh
 wine-list/price-list cellar consistency, grape-blend cap), and `crea_bevanda` was refactored
 into the abstraction layer that takes the whole grape blend as JSON and enforces exact `= 100%`
 (multi-grape UI via `st.data_editor`). A bilingual UI walkthrough lives in `DEMO.md`.
-Next: the GRANT/REVOKE permissions tab and capturing the `DEMO.md` screenshots. Two acknowledged
+Next: the **public demo deploy** (phased plan above — Streamlit Cloud + Aiven), which also
+folds in the GRANT/REVOKE item and the `DEMO.md` screenshots. Two acknowledged
 limits: row scoping is enforced at the application level (DB-level GRANT/REVOKE per role is
 future work), and onboarding a new company is DBA-only (not exposed in the app).
