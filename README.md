@@ -35,7 +35,7 @@ Full E-R schema and design rationale in
 
 ![E-R schema](docs/er.png)
 
-*(vector version: [`docs/er.svg`](docs/er.svg))*
+*(vector version: [`docs/er.svg`](docs/er.svg) · [editable source on Excalidraw](https://excalidraw.com/#json=0z3IDkIiYpeIeiCDvoeLV,dG9b43487-mfvA6bvlXb-w))*
 
 ## Technical highlights
 
@@ -133,6 +133,34 @@ consistency, and the grape-blend cap (with exact `= 100%` enforced by `crea_beva
 takes the whole blend as JSON). Still to come: the GRANT/REVOKE role demo (and new-company
 onboarding, currently DBA-only).
 
+## Roadmap / future work
+
+- **Warehouse editing.** The warehouse role gets `UPDATE`/`DELETE` on its own price
+  list (`listino`) — fix a price, or retire a beverage via soft-delete
+  (`attivo = FALSE`). Stock **movements stay an append-only ledger**: a mistake is
+  corrected by posting a compensating movement (*storno*), not by rewriting history.
+  This keeps the trigger-maintained `giacenza` consistent with **no extra
+  `UPDATE`/`DELETE` triggers** on `movimenti`.
+- **Precise movement editing (planned).** A later iteration will re-implement the
+  ledger from *append-only* to **directly editable**: `UPDATE`/`DELETE` on
+  `movimenti` backed by delta-maintaining `BEFORE/AFTER UPDATE` and `DELETE` triggers
+  that re-apply the oversell guard and the non-negative-stock constraint on every path.
+- **Authorization model — known limitation (rework needed).** Access control is
+  currently split across three layers that are only *loosely* coordinated: column
+  scoping in the per-role views, row scoping passed by the app (`WHERE id_cantina/
+  id_azienda = …`), and per-role `GRANT`/`REVOKE`. Because row-level tenant filtering
+  lives in the application (per-role — not per-employee — DB users + a fresh connection
+  per query rule out `CURRENT_USER()`/session-variable enforcement in the DB, since
+  `CURRENT_USER()` identifies only the role), a bug or a bypassed `WHERE` clause can
+  leak cross-tenant data. This pipeline is **held together by convention, not by a
+  single enforced policy**, and should be reworked into one coherent responsibility
+  boundary (e.g. per-employee DB identities with persistent connections, or a
+  security-definer SP layer that owns *all* row filtering). For the current scope it is
+  *good enough* — **good enough beats perfect here** — but it is a deliberate,
+  documented weak point, not a finished design.
+- **Automated tests.** No test suite yet; add one (`uv add --dev pytest`) covering the
+  auth layer, the per-role/tenant row-scoping, and the trigger/oversell paths.
+
 ---
 
 <a name="-versione-italiana"></a>
@@ -162,7 +190,8 @@ La bevanda si specializza — generalizzazione totale ed esclusiva `(t,d)` — i
 vitigni (blend N:M), vinificazione e affinamento.
 
 Schema E-R completo e scelte di progetto in
-[`docs/progettazione.md`](docs/progettazione.md) e [`docs/er.svg`](docs/er.svg).
+[`docs/progettazione.md`](docs/progettazione.md) e [`docs/er.svg`](docs/er.svg)
+([sorgente modificabile su Excalidraw](https://excalidraw.com/#json=0z3IDkIiYpeIeiCDvoeLV,dG9b43487-mfvA6bvlXb-w)).
 
 ### Caratteristiche tecniche
 
@@ -197,6 +226,37 @@ del documento Sez. 13.2 sono implementati: coerenza della generalizzazione `(t,d
 cantina fra carta vini e listino, e il tetto sul blend di vitigni (con l'uguaglianza esatta
 `= 100%` imposta da `crea_bevanda`, che ora riceve il blend intero come JSON). Ancora da fare:
 la demo dei permessi GRANT/REVOKE (e l'onboarding di una nuova azienda, per ora solo via DBA).
+
+### Roadmap / sviluppi futuri
+
+- **Modifica magazzino.** Il ruolo magazziniere ottiene `UPDATE`/`DELETE` sul proprio
+  listino (`listino`) — correggere un prezzo o ritirare una bevanda via soft-delete
+  (`attivo = FALSE`). I **movimenti restano un registro append-only**: un errore si
+  corregge registrando un movimento di compensazione (*storno*), non riscrivendo lo
+  storico. Così la `giacenza` mantenuta dai trigger resta coerente **senza alcun
+  trigger `UPDATE`/`DELETE`** sui `movimenti`.
+- **Modifica puntuale dei movimenti (previsto).** Un'iterazione successiva
+  reimplementerà il registro da *append-only* a **direttamente modificabile**:
+  `UPDATE`/`DELETE` su `movimenti` con trigger `BEFORE/AFTER UPDATE` e `DELETE` che
+  mantengono la giacenza sul delta, riapplicando il controllo di oversell e il
+  vincolo di scorta non negativa su ogni percorso.
+- **Modello di autorizzazione — limite noto (da rifare).** Il controllo accessi è
+  oggi spalmato su tre livelli coordinati solo *debolmente*: scoping per colonne nelle
+  viste per ruolo, scoping per righe passato dall'app (`WHERE id_cantina/id_azienda =
+  …`) e `GRANT`/`REVOKE` per ruolo. Poiché il filtro tenant a livello di riga vive
+  **nell'applicazione** (utenti DB per ruolo — non per singolo dipendente — + una nuova
+  connessione a ogni query rendono impossibile l'enforcement lato DB con
+  `CURRENT_USER()`/variabili di sessione, dato che `CURRENT_USER()` identifica solo il
+  ruolo), un bug o un `WHERE` saltato può causare un **leak cross-tenant**. Questa
+  pipeline **sta in piedi per convenzione, non per un'unica policy imposta**, e andrebbe
+  rifatta in un solo confine di responsabilità coerente (es. identità DB per singolo
+  dipendente con connessioni persistenti, oppure uno strato di SP `SECURITY DEFINER`
+  che possiede *tutto* il filtro di riga). Per lo scope attuale è *good enough* —
+  **good enough is better than perfect** qui — ma è un punto debole deliberato e
+  documentato, non un design finito.
+- **Test automatici.** Nessuna suite di test ancora; aggiungerne una
+  (`uv add --dev pytest`) che copra lo strato di autenticazione, lo scoping per riga
+  (ruolo/tenant) e i percorsi trigger/oversell.
 
 > ℹ️ L'ordine numerico è significativo: i trigger (`02`) si caricano **prima** del
 > seed (`03`) perché la giacenza non è scritta a mano — parte da 0 e viene costruita

@@ -693,27 +693,84 @@ CREATE OR REPLACE VIEW v_carta_vini_cameriere AS
 > coincidono grazie al vincolo "voci di una carta nella stessa cantina" (Sez. 5), imposto dal
 > trigger `carta_vini_coerenza_cantina` (Sez. 13.2), che garantisce la correttezza della vista.
 
-#### 12.2.1 Scoping per cantina (livello applicativo)
+#### 12.2.1 Viste operative per ruolo
 
-Le viste espongono anche gli identificativi `id_cantina` (e `id_azienda` per il titolare):
-non sono dati "di dominio" ma **chiavi di filtro**. Nota il dipendente loggato, l'applicazione
-restringe la vista alla sua competenza:
+Oltre alle viste di sola consultazione (giacenze/carta), lo schema esterno definisce tre viste
+**operative**, base delle pagine di gestione dell'applicazione. Vale lo stesso criterio — ogni
+ruolo vede solo le colonne che gli competono — mentre il filtro per riga (cantina/azienda) è
+applicativo (Sez. 12.2.2).
 
-- **magazziniere** e **cameriere** → alla propria cantina: `WHERE id_cantina = ?`
-  (`?` = `dipendente.id_cantina` dell'utente in sessione);
-- **titolare** → alle cantine della propria azienda:
-  `WHERE id_azienda = (SELECT id_azienda FROM cantina WHERE id_cantina = ?)`.
+| Vista | Ruolo | Grana | Espone | Nasconde | Filtro (app) |
+|---|---|---|---|---|---|
+| `v_gestione_magazzino` | magazziniere | riga di listino della propria cantina | colonne operative `giacenza`, `prezzo_vendita`, `iva`, `attivo`, `data_ultimo_aggiornamento` + derivati `n_movimenti`, `data_ultimo_movimento`, flag `in_carta_vini` | economics d'acquisto (`prezzo_acquisto`, `margine`) | `id_cantina` |
+| `v_gestione_azienda` | titolare | riga di listino su tutte le cantine dell'azienda | **superset** della precedente + `id_azienda`, `prezzo_acquisto`, `margine`, `valore_riga` (`giacenza × prezzo_acquisto`) | — (visibilità piena sull'azienda) | `id_azienda` |
+| `v_dipendenti_azienda` | titolare | dipendente | roster dei dipendenti dell'azienda (matricola, nome, ruolo, cantina, stato) | `password_hash` | `id_azienda` |
 
-Due precisazioni importanti:
+`v_gestione_azienda` è il **superset economico** di `v_gestione_magazzino`: stessa grana (la
+riga di listino), con in più le colonne di costo/margine e il valore di riga. `v_dipendenti_azienda`
+è invece una vista **separata**, non un allargamento delle giacenze: la sua grana è il *dipendente*,
+non la voce di listino — fonderle sarebbe uno *smell* di modellazione (due entità distinte in una
+sola vista). Copre il requisito "il titolare vede i propri dipendenti".
 
-- Il filtro è **applicativo**, non un vero controllo d'accesso: la demo si connette con un
-  **unico** utente MariaDB che tecnicamente vede tutto. L'enforcement a livello di DB
-  (`GRANT`/`REVOKE` per ruolo sulle viste) è lo schema esterno "forte" e resta un'estensione
-  prevista.
-- La proprietà del titolare è **derivata dalla cantina di assegnazione**
-  (`dipendente.id_cantina → cantina.id_azienda`), perché `azienda.titolare` è un attributo
-  **testuale** e non una FK verso `dipendente`. Con una sola azienda nel seed le due letture
-  coincidono; il modello "pieno" richiederebbe una FK `azienda.id_titolare → dipendente`.
+#### 12.2.2 Due livelli di sicurezza: colonne (viste) e righe (scoping applicativo)
+
+La sicurezza del sistema è organizzata su **due livelli distinti**, che rispondono a domande
+diverse e sono enforced in punti diversi:
+
+1. **Schema esterno / colonne — *cosa* un ruolo può vedere.** Realizzato dalle **viste**: ogni
+   ruolo interroga la propria vista, che espone solo le colonne autorizzate (il magazziniere non
+   vede `prezzo_acquisto`/`margine`, il titolare sì). È **enforced dal DB** tramite i permessi
+   concessi sulle viste e negati sulle tabelle di base (Sez. 12.3).
+2. **Row-level / multi-tenant — *quali righe* un utente può vedere.** "Vedo solo le *mie*
+   cantine / la *mia* azienda": il filtro per `id_cantina`/`id_azienda` è passato
+   **dall'applicazione**, ricavato dalla sessione autenticata, e **non risiede nella vista**. È
+   una scelta di progetto motivata dall'architettura di autenticazione: l'app autentica il
+   *dipendente* a livello **applicativo** (bcrypt sulla tabella `dipendente`, utente in
+   sessione), mentre la connessione al DB usa un utente MySQL **per ruolo**, non per singolo
+   dipendente. Il DB conosce quindi il *ruolo* (e ne impone i privilegi di colonna) ma non
+   l'*identità* del dipendente: una vista, in SQL, non sa "chi la sta interrogando", perciò il
+   filtro di riga non può che essere applicativo, guidato dalla sessione.
+
+In sintesi: il **livello colonna** è enforced dal DB (viste + GRANT/REVOKE), il **livello riga**
+dall'app (filtro dalla sessione autenticata). I due si compongono — la vista taglia le colonne,
+l'app taglia le righe alla competenza dell'utente. (L'azienda del titolare è derivata dalla
+cantina di assegnazione, `dipendente.id_cantina → cantina.id_azienda`, essendo `azienda.titolare`
+un attributo testuale e non una FK.)
+
+### 12.3 Autorizzazioni: privilegi per ruolo (GRANT/REVOKE)
+
+Il livello-colonna della Sez. 12.2.2 è **imposto dal DB** tramite tre utenti MySQL, uno per
+ruolo, con privilegi **least-privilege** (`07_grants.sql`). A ciascun ruolo si concede il minimo
+necessario a operare attraverso il proprio schema esterno, e si **revoca** l'accesso diretto alle
+tabelle di base.
+
+| Ruolo | SELECT (viste) | SELECT (tabelle di supporto) | INSERT | EXECUTE (SP) |
+|---|---|---|---|---|
+| **cameriere** | `v_carta_vini_cameriere` | — | — | `carta_vini_stampa`, `vino_tecnical_data` |
+| **magazziniere** | `v_gestione_magazzino` (+ viste giacenze) | `listino`, `bevanda`, `fornitore`, `produttore`, `vitigno` | `movimenti`, `listino` | `crea_bevanda`, `bevande_sotto_media` |
+| **titolare** | `v_giacenze_titolare`, `v_gestione_azienda`, `v_dipendenti_azienda` | — | — | query di report + `crea_dipendente` |
+
+- **cameriere** — sola lettura: la sua vista e le due SP di consultazione (stampa carta, scheda
+  tecnica del vino).
+- **magazziniere** — **non** è "solo viste": i form registrano movimenti e aggiornano il listino
+  con `INSERT` **diretto**, quindi serve il privilegio di scrittura su `movimenti` e `listino`,
+  oltre alla lettura delle anagrafiche di supporto usate dai form. Crea bevande nuove via SP.
+- **titolare** — viste + SP, **nessuna scrittura diretta**: gestisce dipendenti e report solo
+  attraverso procedure.
+
+**Scritture via stored procedure (`SQL SECURITY DEFINER`).** Instradare le scritture "sensibili"
+(creazione di una bevanda, di un dipendente) in SP con `SQL SECURITY DEFINER` permette di
+concedere al ruolo il solo `EXECUTE`, **senza** dargli privilegi diretti sulle tabelle che la
+procedura tocca: la SP gira con i permessi del *definer*, così l'invariante di integrità è
+incapsulata e non aggirabile. Fanno **eccezione** `movimenti` e `listino`, su cui il magazziniere
+ha `INSERT` diretto perché i form li scrivono senza passare da una SP dedicata — trade-off
+documentato: un privilegio diretto in più in cambio di form più semplici, con la coerenza della
+giacenza comunque garantita dai trigger (Sez. 13).
+
+**REVOKE dell'accesso diretto.** A ogni ruolo è revocato l'accesso diretto alle tabelle di base
+non elencate sopra: nessun ruolo può, ad esempio, leggere `dipendente.password_hash` o scrivere
+su tabelle fuori dalla propria competenza. Il risultato è uno schema esterno "forte", in cui la
+separazione dei ruoli è imposta dal DBMS e non solo dall'applicazione.
 
 ---
 
@@ -888,6 +945,16 @@ dell'invariante non dipende dalla fortuna: è garantita a valle dal CHECK.
 | 8 | subquery | Bevande a listino mai vendute (o mai movimentate) | — | anti-join con `NOT EXISTS` (equivalente a `LEFT JOIN … IS NULL`) | |
 | 9 | subquery | Il dipendente più attivo di ogni cantina (chi ha registrato più movimenti) | — | subquery sul massimo per gruppo | |
 | 10 | subquery | Bevande sotto la giacenza media della propria cantina (lista riordino) | O2 | **subquery correlata** | sì |
+
+> **Scoping per azienda (multi-tenant).** Le query di report che aggregano su più cantine sono
+> **parametrizzate per azienda** (`p_id_azienda`, con join su `cantina`), così che un titolare
+> veda solo i dati della propria azienda. Senza il parametro, con più aziende nel DB
+> (`06_seed_azienda2.sql`) un'aggregazione globale come `valore_magazzino` mostrerebbe anche i
+> dati altrui (**leak cross-tenant**). Sono parametrizzate **per azienda** (`p_id_azienda`)
+> `valore_magazzino`, `margine_per_categoria`, `verifica_ridondanza`, `dipendente_piu_attivo`;
+> e **per cantina** (`p_id_cantina`) `bevande_sotto_media`, `bevande_mai_vendute`;
+> `top_seller` e `carta_vini_stampa` lo erano già per costruzione. È la controparte, sul lato
+> *lettura*, dello scoping row-level di Sez. 12.2.2.
 
 ### 14.2 Implementazione
 
