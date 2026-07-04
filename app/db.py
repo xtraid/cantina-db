@@ -1,16 +1,36 @@
 import pymysql
 import streamlit as st
 
+# App role -> secrets subsection = which MySQL user we connect as.
+# Each role maps to a least-privilege DB user (sql/07_grants.sql), so the DB
+# itself enforces the role's column/table privileges.
+_ROLE_SECTION = {
+    "titolare": "titolare",
+    "magazziniere": "magazziniere",
+    "cameriere": "cameriere",
+}
+
+
+def _role_credentials():
+    """Pick the MySQL user/password for the current request.
+    Before login (no user in session) we use the `login` bootstrap account,
+    which may only read dipendente/cantina to verify credentials. Once a user
+    is logged in we connect as their per-role MySQL user, so GRANT/REVOKE
+    enforce what that role can see and do."""
+    user = st.session_state.get("user")
+    section = _ROLE_SECTION.get(user["ruolo"], "login") if user else "login"
+    return st.secrets["mysql"][section]
+
 
 def get_connection():
-    """ "Connects to MariaDB using credentials
-    in secrets.toml"""
+    """Connect to MariaDB as the current role's MySQL user (secrets.toml)."""
     cfg = st.secrets["mysql"]
+    creds = _role_credentials()
     return pymysql.connect(
         host=cfg["host"],
         port=int(cfg["port"]),
-        user=cfg["user"],
-        password=cfg["password"],
+        user=creds["user"],
+        password=creds["password"],
         database=cfg["database"],
         charset="utf8mb4",
         cursorclass=pymysql.cursors.DictCursor,

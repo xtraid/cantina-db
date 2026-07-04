@@ -20,3 +20,15 @@ def log_in(username, password):
     if bcrypt.checkpw(password.encode(), user["password_hash"].encode()):
         return user
     return None
+
+
+def id_azienda(u):
+    """Company id of the logged-in user — tenant scope for owner-level
+    queries/SP. Set at login (see log_in), so no extra DB round-trip."""
+    return u["id_azienda"]
+
+
+def id_cantina(u):
+    """Cellar id of the logged-in user — tenant scope for warehouse-level
+    queries/SP. Set at login (see log_in)."""
+    return u["id_cantina"]

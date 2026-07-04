@@ -4,6 +4,7 @@ import bcrypt
 import streamlit as st
 
 from db import run_query, run_write, call_proc_write
+from auth import id_cantina, id_azienda
 
 
 def movement_form(u):
@@ -14,7 +15,7 @@ def movement_form(u):
         "SELECT l.id_bevanda, b.nome FROM listino l "
         "INNER JOIN bevanda b USING(id_bevanda) "
         "WHERE l.id_cantina = %s AND l.attivo = TRUE ORDER BY b.nome",
-        (u["id_cantina"],),
+        (id_cantina(u),),
     )
     bev = st.selectbox(
         "Beverage", bevande, format_func=lambda b: b["nome"], key="mv_bev"
@@ -54,7 +55,7 @@ def movement_form(u):
                     prezzo or None,
                     bev["id_bevanda"],
                     u["id_dipendente"],
-                    u["id_cantina"],
+                    id_cantina(u),
                     id_fornitore,
                 ),
             )
@@ -70,7 +71,7 @@ def listino_form(u):
         "WHERE b.attivo = TRUE "
         "AND b.id_bevanda NOT IN (SELECT id_bevanda FROM listino WHERE id_cantina = %s) "
         "ORDER BY b.nome",
-        (u["id_cantina"],),
+        (id_cantina(u),),
     )
     if not bevande:
         st.info("All active beverages are already in this cellar's price list.")
@@ -103,10 +104,93 @@ def listino_form(u):
                     prezzo_acquisto,
                     iva or None,
                     bev["id_bevanda"],
-                    u["id_cantina"],
+                    id_cantina(u),
                 ),
             )
             st.success("Beverage added to price list (stock starts at 0)")
+        except Exception as e:
+            st.error(f"Rejected: {e}")
+
+
+def edit_listino_form(u):
+    """Edit prices/VAT and soft-delete a price-list row of the magazziniere's
+    own cellar. Prices, VAT and `attivo` are exactly the columns the role may
+    UPDATE (column-level GRANT); giacenza is never touched here — it is kept
+    consistent only by the movimenti triggers. Soft-delete just flips `attivo`
+    and is independent of stock: a deactivated row keeps its giacenza (Option A).
+    The `AND id_cantina = %s` on every write is the app-side row scoping."""
+    righe = run_query(
+        "SELECT l.id_listino, b.nome, l.prezzo_vendita, l.prezzo_acquisto, "
+        "l.iva, l.giacenza, l.attivo "
+        "FROM listino l INNER JOIN bevanda b USING(id_bevanda) "
+        "WHERE l.id_cantina = %s ORDER BY l.attivo DESC, b.nome",
+        (id_cantina(u),),
+    )
+    if not righe:
+        st.info("This cellar's price list is empty.")
+        return
+
+    def _label(r):
+        stato = "" if r["attivo"] else "  ⛔ inactive"
+        return f"{r['nome']} — €{r['prezzo_vendita']} · {r['giacenza']} btl{stato}"
+
+    riga = st.selectbox("Price-list row", righe, format_func=_label, key="ed_row")
+
+    prezzo_acquisto = st.number_input(
+        "Purchase price",
+        min_value=0.0,
+        value=float(riga["prezzo_acquisto"] or 0.0),
+        step=0.01,
+        key="ed_buy",
+    )
+    prezzo_vendita = st.number_input(
+        "Sale price",
+        min_value=0.0,
+        value=float(riga["prezzo_vendita"] or 0.0),
+        step=0.01,
+        key="ed_sell",
+    )
+    iva = st.number_input(
+        "VAT % (optional)",
+        min_value=0.0,
+        value=float(riga["iva"] or 0.0),
+        step=0.5,
+        key="ed_iva",
+    )
+
+    col_save, col_toggle = st.columns(2)
+
+    if col_save.button("Save prices", key="ed_save"):
+        if prezzo_vendita < prezzo_acquisto:
+            st.error("Sale price must be >= purchase price.")
+            return
+        try:
+            run_write(
+                "UPDATE listino SET prezzo_vendita = %s, prezzo_acquisto = %s, "
+                "iva = %s WHERE id_listino = %s AND id_cantina = %s",
+                (
+                    prezzo_vendita,
+                    prezzo_acquisto,
+                    iva or None,
+                    riga["id_listino"],
+                    id_cantina(u),
+                ),
+            )
+            st.success("Prices updated")
+        except Exception as e:
+            st.error(f"Rejected: {e}")
+
+    # Soft-delete: flip `attivo`, stock is kept as-is.
+    nuovo_stato = not riga["attivo"]
+    etichetta = "Reactivate" if nuovo_stato else "Deactivate"
+    if col_toggle.button(etichetta, key="ed_toggle"):
+        try:
+            run_write(
+                "UPDATE listino SET attivo = %s "
+                "WHERE id_listino = %s AND id_cantina = %s",
+                (nuovo_stato, riga["id_listino"], id_cantina(u)),
+            )
+            st.success("Reactivated" if nuovo_stato else "Deactivated (stock kept)")
         except Exception as e:
             st.error(f"Rejected: {e}")
 
@@ -248,7 +332,7 @@ def add_employee_form(u):
 
     cantine = run_query(
         "SELECT id_cantina, nome FROM cantina WHERE id_azienda = %s ORDER BY nome",
-        (u["id_azienda"],),
+        (id_azienda(u),),
     )
     cantina = st.selectbox(
         "Cellar", cantine, format_func=lambda c: c["nome"], key="ae_cant"
@@ -271,7 +355,7 @@ def add_employee_form(u):
                     password_hash,
                     email or None,
                     cantina["id_cantina"],
-                    u["id_azienda"],
+                    id_azienda(u),
                 ),
             )
             new_id = rows[0]["id_dipendente"] if rows else "?"
