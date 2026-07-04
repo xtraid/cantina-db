@@ -1,9 +1,7 @@
--- ============================================================
---  Viste per ruolo (schema esterno) - cantina
---  Carica DOPO 01_schema.sql (+ 03_seed.sql per i dati).
---  Ogni vista e' lo schema esterno di un ruolo: espone solo
---  le colonne pertinenti e autorizzate per quel ruolo (t09).
--- ============================================================
+-- Per-role views (external schema) - cantina.
+-- Load AFTER 01_schema.sql (+ 03_seed.sql for the data).
+-- Each view is the external schema of a role: it exposes only the columns
+-- relevant to and authorized for that role (t09).
 
 USE cantina;
 
@@ -45,7 +43,7 @@ CREATE OR REPLACE VIEW v_carta_vini_cameriere AS
     ORDER BY cv.titolo, v.ordine;
 
 CREATE OR REPLACE VIEW v_gestione_magazzino AS
-    SELECT l.id_listino,                         -- serve per UPDATE/DELETE app-side
+    SELECT l.id_listino,                         -- needed for app-side UPDATE/DELETE
            c.id_cantina,                         -- scoping
            c.nome AS nome_cantina,
            b.id_bevanda,
@@ -56,7 +54,7 @@ CREATE OR REPLACE VIEW v_gestione_magazzino AS
            l.prezzo_acquisto,
            l.prezzo_vendita,
            (l.prezzo_vendita - l.prezzo_acquisto) AS margine,
-           l.attivo,                             -- mostra anche le disattivate
+           l.attivo,                             -- also shows the deactivated ones
            l.data_ultimo_aggiornamento
     FROM listino l
     INNER JOIN bevanda b USING(id_bevanda)
@@ -66,7 +64,7 @@ CREATE OR REPLACE VIEW v_gestione_magazzino AS
 
 CREATE OR REPLACE VIEW v_gestione_azienda AS
     SELECT l.id_listino,
-           c.id_azienda,                         -- scoping titolare
+           c.id_azienda,                         -- owner scoping
            c.id_cantina,
            c.nome AS nome_cantina,
            b.id_bevanda,

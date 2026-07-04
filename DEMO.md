@@ -25,15 +25,21 @@ mariadb -u <user> -p cantina < sql/03_seed.sql
 mariadb -u <user> -p cantina < sql/04_views.sql
 mariadb -u <user> -p cantina < sql/05_queries_and_sp.sql
 mariadb -u <user> -p cantina < sql/06_seed_azienda2.sql
+sudo mariadb cantina < sql/07_grants.sql   # per-role MySQL users — run as root
 ```
 
 Order matters: triggers (`02`) **before** the seed (`03`), because stock is not
 hardcoded — it starts at 0 and the `follow_up` trigger builds it up as the seed
-inserts the movements.
+inserts the movements. And `07_grants.sql` runs **last, as root**: it creates one
+least-privilege MySQL user per role (`cantina_login/titolare/magazziniere/cameriere`)
+and needs views (`04`) and SPs (`05`) to already exist to grant on them.
 
 ### 0.2 Run the app
 
-DB credentials live in `app/.streamlit/secrets.toml`. Then:
+DB credentials live in `app/.streamlit/secrets.toml`, which now holds **one
+section per role** (`login`, `titolare`, `magazziniere`, `cameriere`): the app
+connects as the logged-in user's role, so the DB itself enforces what that role
+may read/write (the passwords here must match `sql/07_grants.sql`). Then:
 
 ```bash
 cd app
@@ -64,14 +70,14 @@ The simplest page: read-only, scoped to the waiter's own cellar.
 
 | Step | Action | 🔎 What to observe |
 |---|---|---|
-| 1.1 | Log in as `s.conti` | You see **only** your cellar's wine list (view `v_carta_vini_cameriere`, filtered by `id_cantina`). |
-| 1.2 | Toggle **"Show queries (SP)"** | Two stored procedures appear: the **printable wine list** (`carta_vini_stampa`) and a **wine technical sheet** (`vino_tecnical_data`). |
-| 1.3 | Pick a wine from **"Wine"** | The technical sheet recomposes the ISA hierarchy (beverage → wine → vinification → grapes → aging) in one shot. |
+| 1.1 | Log in as `s.conti`, tab **"Carta vini"** | You see **only** your cellar's wine list (view `v_carta_vini_cameriere`, filtered by `id_cantina`). |
+| 1.2 | Tab **"Carta stampabile"** | The **printable wine list** stored procedure (`carta_vini_stampa`). |
+| 1.3 | Tab **"Scheda tecnica"**, pick a wine from **"Wine"** | The **wine technical sheet** SP (`vino_tecnical_data`) recomposes the ISA hierarchy (beverage → wine → vinification → grapes → aging) in one shot. |
 
 **Concept shown:** views as an *external schema* (each role sees only what it
 needs) + Sec. 14 queries runnable from the app.
 
-> 📸 Screenshot: waiter wine list + SP toggle expanded — `docs/screenshots/02-waiter.png`
+> 📸 Screenshot: waiter wine list + technical-sheet tab — `docs/screenshots/02-waiter.png`
 
 ---
 
@@ -178,7 +184,7 @@ the data stays clean:
 ```sql
 -- (t,d) generalization: a BIRRA beverage cannot land in the vino table
 SET autocommit=0;
-INSERT INTO produttore (nome,paese) VALUES ('X','IT'); SET @p:=LAST_INSERT_ID();
+INSERT INTO produttore (nome,id_paese) VALUES ('X',1); SET @p:=LAST_INSERT_ID();
 INSERT INTO bevanda (nome,categoria,id_produttore) VALUES ('X','BIRRA',@p); SET @b:=LAST_INSERT_ID();
 INSERT INTO vino (id_bevanda) VALUES (@b);   -- ❌ 'Categoria incoerente: la bevanda non è VINO'
 ROLLBACK;
@@ -209,10 +215,15 @@ ROLLBACK;
 | Query stored procedures | §1.2, §2.1, §3.1 (the 10 Sec. 14 queries) |
 | Application security | parameterized queries everywhere; bcrypt app-side (§3.2) |
 | Role-based access design | UI + server-side scoping, per cellar and per company (§3, §4) |
+| DB-level authorization | one least-privilege MySQL user per role; column/table `GRANT`/`REVOKE` (`sql/07_grants.sql`) |
 
 ### Known limits (declared)
-- Scoping is enforced at the **application level** (the app connects as a single
-  DB user); real per-role `GRANT`/`REVOKE` is future work.
+- **Column/table** scoping is enforced at the DB level (per-role `GRANT`/`REVOKE`,
+  `sql/07_grants.sql`); **row** scoping (`id_cantina`/`id_azienda`) is still passed
+  by the app in the `WHERE`, because the MySQL user is **per-role, not per-employee**
+  — two waiters of different cellars connect as the same `cantina_cameriere` user,
+  so the DB can't tell them apart by `CURRENT_USER()`. True row-level security would
+  need a user per employee (or `SECURITY DEFINER` SPs that read `USER()`).
 - Onboarding a **new company** currently needs a DB super-user (not exposed in
   the UI).
 - The exact `= 100` on the grape blend is enforced by the `crea_bevanda` SP; the
@@ -248,15 +259,23 @@ mariadb -u <user> -p cantina < sql/03_seed.sql
 mariadb -u <user> -p cantina < sql/04_views.sql
 mariadb -u <user> -p cantina < sql/05_queries_and_sp.sql
 mariadb -u <user> -p cantina < sql/06_seed_azienda2.sql
+sudo mariadb cantina < sql/07_grants.sql   # utenti MySQL per ruolo — da eseguire come root
 ```
 
 L'ordine conta: i trigger (`02`) prima del seed (`03`), perché la **giacenza non
 è scritta a mano** — parte da 0 e la costruisce il trigger `follow_up` man mano
-che il seed inserisce i movimenti.
+che il seed inserisce i movimenti. E `07_grants.sql` va **per ultimo, come root**:
+crea un utente MySQL a privilegio minimo per ruolo
+(`cantina_login/titolare/magazziniere/cameriere`) e ha bisogno che viste (`04`) e
+SP (`05`) esistano già per poter concedere i permessi su di esse.
 
 #### 0.2 Avvia l'app
 
-Le credenziali del DB stanno in `app/.streamlit/secrets.toml`. Poi:
+Le credenziali del DB stanno in `app/.streamlit/secrets.toml`, che ora contiene
+**una sezione per ruolo** (`login`, `titolare`, `magazziniere`, `cameriere`):
+l'app si connette con l'utente del ruolo loggato, quindi è il DB stesso a imporre
+cosa quel ruolo può leggere/scrivere (le password qui devono combaciare con
+`sql/07_grants.sql`). Poi:
 
 ```bash
 cd app
@@ -285,14 +304,14 @@ La pagina più semplice: sola lettura, filtrata sulla propria cantina.
 
 | Passo | Azione | 🔎 Cosa osservare |
 |---|---|---|
-| 1.1 | Login come `s.conti` | Vedi **solo** la carta vini della *tua* cantina (vista `v_carta_vini_cameriere`, filtrata per `id_cantina`). |
-| 1.2 | Attiva il toggle **"Show queries (SP)"** | Compaiono due stored procedure: la **carta vini pronta per la stampa** (`carta_vini_stampa`) e la **scheda tecnica di un vino** (`vino_tecnical_data`). |
-| 1.3 | Seleziona un vino dal menu **"Wine"** | La scheda tecnica ricompone la gerarchia ISA (bevanda → vino → vinificazione → vitigni → affinamento) in un colpo solo. |
+| 1.1 | Login come `s.conti`, tab **"Carta vini"** | Vedi **solo** la carta vini della *tua* cantina (vista `v_carta_vini_cameriere`, filtrata per `id_cantina`). |
+| 1.2 | Tab **"Carta stampabile"** | La stored procedure della **carta vini pronta per la stampa** (`carta_vini_stampa`). |
+| 1.3 | Tab **"Scheda tecnica"**, scegli un vino dal menu **"Wine"** | La SP **scheda tecnica** (`vino_tecnical_data`) ricompone la gerarchia ISA (bevanda → vino → vinificazione → vitigni → affinamento) in un colpo solo. |
 
 **Concetto mostrato:** viste come *schema esterno* (ogni ruolo vede solo ciò che
 gli compete) + query di Sez. 14 eseguibili dall'app.
 
-> 📸 Screenshot: carta vini cameriere + toggle SP aperto — `docs/screenshots/02-waiter.png`
+> 📸 Screenshot: carta vini cameriere + tab scheda tecnica — `docs/screenshots/02-waiter.png`
 
 ### 2. Magazziniere — il cuore operativo (login: `m.ferri`)
 
@@ -391,7 +410,7 @@ per non sporcare i dati:
 ```sql
 -- (t,d) generalizzazione: una bevanda BIRRA non può finire nella tabella vino
 SET autocommit=0;
-INSERT INTO produttore (nome,paese) VALUES ('X','IT'); SET @p:=LAST_INSERT_ID();
+INSERT INTO produttore (nome,id_paese) VALUES ('X',1); SET @p:=LAST_INSERT_ID();
 INSERT INTO bevanda (nome,categoria,id_produttore) VALUES ('X','BIRRA',@p); SET @b:=LAST_INSERT_ID();
 INSERT INTO vino (id_bevanda) VALUES (@b);   -- ❌ 'Categoria incoerente: la bevanda non è VINO'
 ROLLBACK;
@@ -420,10 +439,16 @@ ROLLBACK;
 | Stored procedure di interrogazione | §1.2, §2.1, §3.1 (le 10 query di Sez. 14) |
 | Sicurezza applicativa | query parametrizzate ovunque; bcrypt lato app (§3.2) |
 | Progettazione di accesso per ruolo | scoping UI + lato server, per cantina e per azienda (§3, §4) |
+| Autorizzazione lato DB | un utente MySQL a privilegio minimo per ruolo; `GRANT`/`REVOKE` per colonna/tabella (`sql/07_grants.sql`) |
 
 #### Limiti noti (dichiarati)
-- Lo scoping è imposto a **livello applicativo** (l'app si connette con un unico
-  utente DB); il `GRANT`/`REVOKE` reale per ruolo è lavoro futuro.
+- Lo scoping per **colonna/tabella** è imposto a livello DB (`GRANT`/`REVOKE` per
+  ruolo, `sql/07_grants.sql`); lo scoping per **riga** (`id_cantina`/`id_azienda`)
+  lo passa ancora l'app nel `WHERE`, perché l'utente MySQL è **per ruolo, non per
+  dipendente** — due camerieri di cantine diverse si connettono con lo stesso
+  utente `cantina_cameriere`, quindi il DB non può distinguerli via
+  `CURRENT_USER()`. Una vera row-level security richiederebbe un utente per
+  dipendente (o SP `SECURITY DEFINER` che leggono `USER()`).
 - L'onboarding di una **nuova azienda** richiede oggi un super-user da database
   (non esposto in UI).
 - Il `= 100` esatto sul blend vitigni è imposto dalla SP `crea_bevanda`; il

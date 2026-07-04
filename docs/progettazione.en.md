@@ -603,6 +603,20 @@ depends on the whole key and `Regione` no longer holds attributes of the Country
 
 -> **the whole schema is in 2NF**.
 
+> **Consistency note — `Produttore.paese` folded back into the Paese/Regione
+> decomposition.** An early draft stored the producer's country as a **free string**
+> (`paese VARCHAR`). Strictly speaking that was not a normal-form violation —
+> `Produttore` has a **simple PK** (`id_produttore`), so it is trivially in 2NF/3NF
+> regardless of the column type. It was, however, a **redundancy inconsistent** with
+> the 2NF decomposition that had already promoted Country to its own entity
+> (Paese/Regione, cf. the FD `nome_paese -> code_iso` in §11.3): the same country got
+> duplicated as text in every producer, with the classic **update anomaly** (renaming a
+> country would touch every row) and no referential integrity (nothing enforced that the
+> value was an existing country — the seed indeed contained names absent from `Paese`).
+> The column was replaced by `Produttore.id_paese` **FK -> `Paese`**: the country lives
+> in a single place, integrity is enforced by the DB, and the model is now **uniform**
+> with `Regione`, which already pointed to `Paese`.
+
 ### 11.3 Third normal form (3NF)
 
 3NF forbids **transitive dependencies** among non-key attributes (`A -> B -> C`)
@@ -651,7 +665,7 @@ and **documented**. The course slides stop at 3NF: BCNF is not considered.
 | Normal form | Outcome | Detail |
 |---|---|---|
 | **1NF** | satisfied by the whole schema | atomic columns; multivalued already removed in Sec. 9.2 (hops/malts/ingredients -> dedicated tables) |
-| **2NF** | satisfied by the whole schema | 18 entities with simple PK -> automatic; 5 with composite PK verified (full dependency on `Composto`/`Contiene_voce`; 3 all-key trivial); `Regione` decomposed into `Paese`+`Regione` to avoid the partial dependency of `code_iso` |
+| **2NF** | satisfied by the whole schema | 18 entities with simple PK -> automatic; 5 with composite PK verified (full dependency on `Composto`/`Contiene_voce`; 3 all-key trivial); `Regione` decomposed into `Paese`+`Regione` to avoid the partial dependency of `code_iso`; `Produttore.paese` folded into FK `id_paese -> Paese` for consistency (note in §11.2) |
 | **3NF** | satisfied except 2 deliberate choices | knowing violations: `giacenza` (computed column) and `Movimenti.id_cantina` (transitive via employee), motivated in Sec. 8/8.1 and maintained by the triggers |
 
 ---

@@ -1,13 +1,11 @@
--- ============================================================================
--- 05_queries.sql — Query di esempio (documento Sez. 14)
--- Dominio: cantina / bevande. DB: `cantina`.
--- Prerequisiti: 01_schema, 02_triggers, 03_seed, 04_views già caricati.
--- ============================================================================
+-- 05_queries.sql — Example queries (document Sec. 14).
+-- Domain: winery / beverages. DB: `cantina`.
+-- Prerequisites: 01_schema, 02_triggers, 03_seed, 04_views already loaded.
 
 USE cantina;
 
--- Q7 — Verifica della ridondanza controllata: giacenza memorizzata in listino
--- vs ricalcolata dai movimenti (Σ carichi − Σ scarichi). 0 righe = trigger corretti.
+-- Q7 — Controlled-redundancy check: stock stored in listino vs recomputed
+-- from movimenti (Σ inbound − Σ outbound). 0 rows = triggers correct.
 DELIMITER $$
 DROP PROCEDURE IF EXISTS verifica_ridondanza$$
 CREATE PROCEDURE verifica_ridondanza (IN p_id_azienda INT)
@@ -33,8 +31,8 @@ CREATE PROCEDURE verifica_ridondanza (IN p_id_azienda INT)
 DELIMITER ;
 
 
--- Q5 — Top N bevande più vendute in un intervallo di date, per una cantina.
--- Usa l'indice (id_cantina, data_ora) di Sez. 12.
+-- Q5 — Top N best-selling beverages over a date range, for a winery.
+-- Uses the (id_cantina, data_ora) index from Sec. 12.
 DELIMITER $$
 DROP PROCEDURE IF EXISTS top_seller$$
 CREATE PROCEDURE top_seller (IN p_cantina INT, IN p_start DATETIME, IN p_end DATETIME, IN p_n INT)
@@ -49,7 +47,7 @@ CREATE PROCEDURE top_seller (IN p_cantina INT, IN p_start DATETIME, IN p_end DAT
 DELIMITER ;
 
 
--- Q10 — Bevande sotto la giacenza media della propria cantina (lista riordino).
+-- Q10 — Beverages below the average stock of their own winery (reorder list).
 DELIMITER $$
 DROP PROCEDURE IF EXISTS bevande_sotto_media$$
 CREATE PROCEDURE bevande_sotto_media (IN p_id_cantina INT)
@@ -63,9 +61,9 @@ CREATE PROCEDURE bevande_sotto_media (IN p_id_cantina INT)
 DELIMITER ;
 
 
--- Q1 — Scheda tecnica completa di un vino (gerarchia ISA ricomposta).
--- SCELTA DI PROGETTO: un blend (>1 vitigno) produce PIÙ righe, una per vitigno;
--- collassare i vitigni in un'unica scheda è responsabilità del chiamante.
+-- Q1 — Full technical sheet of a wine (ISA hierarchy recomposed).
+-- DESIGN CHOICE: a blend (>1 vitigno) produces MULTIPLE rows, one per vitigno;
+-- collapsing the vitigni into a single sheet is the caller's responsibility.
 DELIMITER $$
 DROP PROCEDURE IF EXISTS vino_tecnical_data$$
 CREATE PROCEDURE vino_tecnical_data (IN p_id INT)
@@ -98,8 +96,8 @@ CREATE PROCEDURE vino_tecnical_data (IN p_id INT)
 DELIMITER ;
 
 
--- Q2 — Carta vini pubblicata "pronta per la stampa", di una cantina.
--- LEFT JOIN su vino: l'annata è NULL per eventuali bevande non-vino in carta.
+-- Q2 — Published wine list "ready to print", for a winery.
+-- LEFT JOIN on vino: annata is NULL for any non-wine bevande on the list.
 DELIMITER $$
 DROP PROCEDURE IF EXISTS carta_vini_stampa$$
 CREATE PROCEDURE carta_vini_stampa (IN p_cantina INT)
@@ -116,7 +114,7 @@ CREATE PROCEDURE carta_vini_stampa (IN p_cantina INT)
 DELIMITER ;
 
 
--- Q3 — Valore di magazzino per cantina: Σ (giacenza × prezzo di acquisto).
+-- Q3 — Warehouse value per winery: Σ (stock × purchase price).
 DELIMITER $$
 DROP PROCEDURE IF EXISTS valore_magazzino$$
 CREATE PROCEDURE valore_magazzino (IN p_id_azienda INT)
@@ -129,7 +127,7 @@ CREATE PROCEDURE valore_magazzino (IN p_id_azienda INT)
 DELIMITER ;
 
 
--- Q4 — Margine medio per categoria di bevanda: AVG(prezzo_vendita − prezzo_acquisto).
+-- Q4 — Average margin per beverage category: AVG(prezzo_vendita − prezzo_acquisto).
 DELIMITER $$
 DROP PROCEDURE IF EXISTS margine_per_categoria$$
 CREATE PROCEDURE margine_per_categoria (IN p_id_azienda INT)
@@ -143,7 +141,7 @@ CREATE PROCEDURE margine_per_categoria (IN p_id_azienda INT)
 DELIMITER ;
 
 
--- Q6 — Vini blend: vini con più di un vitigno (GROUP BY + HAVING COUNT > 1).
+-- Q6 — Blend wines: wines with more than one vitigno (GROUP BY + HAVING COUNT > 1).
 DELIMITER $$
 DROP PROCEDURE IF EXISTS vini_blend$$
 CREATE PROCEDURE vini_blend ()
@@ -159,7 +157,7 @@ CREATE PROCEDURE vini_blend ()
 DELIMITER ;
 
 
--- Q8 — Bevande mai vendute (anti-join con NOT EXISTS).
+-- Q8 — Never-sold beverages (anti-join with NOT EXISTS).
 DELIMITER $$
 DROP PROCEDURE IF EXISTS bevande_mai_vendute$$
 CREATE PROCEDURE bevande_mai_vendute (IN p_id_cantina INT)
@@ -175,10 +173,10 @@ CREATE PROCEDURE bevande_mai_vendute (IN p_id_cantina INT)
 DELIMITER ;
 
 
--- Q9 — Dipendente più attivo (più movimenti) per ciascuna cantina.
--- MariaDB non supporta le derived table correlate (LATERAL): il "max per cantina"
--- si ottiene con due derived table NON correlate unite in JOIN. Il JOIN su
--- (id_cantina, n = max_n) tiene eventuali pareggi.
+-- Q9 — Most active employee (most movimenti) for each winery.
+-- MariaDB does not support correlated derived tables (LATERAL): the "max per winery"
+-- is obtained with two NON-correlated derived tables joined together. The JOIN on
+-- (id_cantina, n = max_n) keeps any ties.
 DELIMITER $$
 DROP PROCEDURE IF EXISTS dipendente_piu_attivo$$
 CREATE PROCEDURE dipendente_piu_attivo (IN p_id_azienda INT)
@@ -201,18 +199,16 @@ CREATE PROCEDURE dipendente_piu_attivo (IN p_id_azienda INT)
 DELIMITER ;
 
 
--- ============================================================================
--- Procedure di scrittura dell'applicazione (Track B — NON query di Sez. 14).
--- ============================================================================
+-- Application write procedures (Track B — not Sec. 14 queries).
 
--- crea_bevanda — inserisce una bevanda "mai vista" nel catalogo globale.
--- Catena atomica: (eventuale) produttore nuovo -> bevanda (padre) -> riga del
--- sottotipo, obbligatoria per la generalizzazione totale ed esclusiva (t,d):
--- ogni bevanda DEVE essere esattamente una tra vino/birra/super_alcolico/analcolico.
--- Produttore: se p_id_produttore IS NULL ne crea uno nuovo dai campi p_produttore_*;
--- altrimenti riusa quello esistente.
--- L'atomicità è garantita dal chiamante (connessione autocommit=OFF: commit unico
--- a fine CALL, rollback su qualunque errore/SIGNAL).
+-- crea_bevanda — inserts a "never seen" bevanda into the global catalog.
+-- Atomic chain: (optional) new produttore -> bevanda (parent) -> subtype row,
+-- mandatory for the total and exclusive generalization (t,d):
+-- every bevanda MUST be exactly one of vino/birra/super_alcolico/analcolico.
+-- Produttore: if p_id_produttore IS NULL it creates a new one from the p_produttore_* fields;
+-- otherwise it reuses the existing one.
+-- Atomicity is guaranteed by the caller (autocommit=OFF connection: single commit
+-- at the end of CALL, rollback on any error/SIGNAL).
 DELIMITER $$
 DROP PROCEDURE IF EXISTS crea_bevanda$$
 CREATE PROCEDURE crea_bevanda (
@@ -223,8 +219,8 @@ CREATE PROCEDURE crea_bevanda (
     IN p_is_biologico      BOOLEAN,
     IN p_id_produttore     INT,
     IN p_produttore_nome   VARCHAR(255),
-    IN p_produttore_paese  VARCHAR(100),
-    -- Parametri del solo VINO (NULL per le altre categorie)
+    IN p_id_paese          INT,
+    -- VINO-only parameters (NULL for the other categories)
     IN p_annata            SMALLINT,
     IN p_colore            VARCHAR(50),
     IN p_vitigni_json      TEXT,
@@ -237,34 +233,34 @@ CREATE PROCEDURE crea_bevanda (
         DECLARE v_id_produttore INT;
         DECLARE v_id_bevanda    INT;
 
-        -- Produttore: esistente o nuovo
+        -- Produttore: existing or new
         IF p_id_produttore IS NULL THEN
             IF p_produttore_nome IS NULL OR p_produttore_nome = '' THEN
                 SIGNAL SQLSTATE '45000'
                     SET MESSAGE_TEXT = 'Produttore mancante';
             END IF;
-            INSERT INTO produttore (nome, paese)
-            VALUES (p_produttore_nome, p_produttore_paese);
+            INSERT INTO produttore (nome, id_paese)
+            VALUES (p_produttore_nome, p_id_paese);
             SET v_id_produttore = LAST_INSERT_ID();
         ELSE
             SET v_id_produttore = p_id_produttore;
         END IF;
 
-        -- Bevanda (padre della gerarchia)
+        -- Bevanda (parent of the hierarchy)
         INSERT INTO bevanda
             (nome, categoria, gradazione_alcolica, volume, is_biologico, id_produttore)
         VALUES
             (p_nome, p_categoria, p_gradazione, p_volume, p_is_biologico, v_id_produttore);
         SET v_id_bevanda = LAST_INSERT_ID();
 
-        -- Sottotipo obbligatorio (generalizzazione totale)
+        -- Mandatory subtype (total generalization)
         IF p_categoria = 'VINO' THEN
-            -- vino deve avere >= 1 vitigno (relazione N:M "Composto")
+            -- a vino must have >= 1 vitigno (N:M relationship "Composto")
             IF p_vitigni_json IS NULL OR JSON_LENGTH(p_vitigni_json) = 0 THEN
                 SIGNAL SQLSTATE '45000'
                     SET MESSAGE_TEXT = 'Vitigno mancante per il vino';
             END IF;
-            -- il blend deve sommare ESATTAMENTE a 100
+            -- the blend must sum EXACTLY to 100
             IF ( SELECT SUM(pct) FROM JSON_TABLE(
                      p_vitigni_json, '$[*]'
                      COLUMNS (id_vitigno INT PATH '$.id', pct DECIMAL(5,2) PATH '$.pct')
@@ -275,17 +271,17 @@ CREATE PROCEDURE crea_bevanda (
 
             INSERT INTO vino (id_bevanda, annata, colore)
             VALUES (v_id_bevanda, p_annata, p_colore);
-            -- vinificazione: partecipazione 1:1 obbligatoria
+            -- vinificazione: mandatory 1:1 participation
             INSERT INTO vinificazione (mese_vendemmia, tipo_vendemmia, id_bevanda)
             VALUES (p_mese_vendemmia, p_tipo_vendemmia, v_id_bevanda);
-            -- tutto il blend in una insert set-based
+            -- the whole blend in one set-based insert
             INSERT INTO vino_vitigno (id_bevanda, id_vitigno, percentuale)
             SELECT v_id_bevanda, jt.id_vitigno, jt.pct
             FROM JSON_TABLE(
                 p_vitigni_json, '$[*]'
                 COLUMNS (id_vitigno INT PATH '$.id', pct DECIMAL(5,2) PATH '$.pct')
             ) AS jt;
-            -- affinamento: opzionale (0:1) -> inserito solo se fornito
+            -- affinamento: optional (0:1) -> inserted only if provided
             IF p_durata_legno_mesi IS NOT NULL
                OR (p_tipo_legno IS NOT NULL AND p_tipo_legno <> '') THEN
                 INSERT INTO affinamento (durata_legno_mesi, tipo_legno, id_bevanda)
@@ -307,9 +303,9 @@ CREATE PROCEDURE crea_bevanda (
 DELIMITER ;
 
 
--- crea_dipendente — inserisce un nuovo dipendente.
--- NB: la password NON viene hashata qui: p_password_hash arriva già come hash
--- bcrypt calcolato dall'applicazione.
+-- crea_dipendente — inserts a new dipendente.
+-- The password is not hashed here: p_password_hash already arrives as a
+-- bcrypt hash computed by the application.
 DELIMITER $$
 DROP PROCEDURE IF EXISTS crea_dipendente$$
 CREATE PROCEDURE crea_dipendente (

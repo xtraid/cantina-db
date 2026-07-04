@@ -132,10 +132,22 @@ def store_page(u):
 
 def waiter_page(u):
     st.header("Wine sheet")
-    show_sp = st.toggle("Show queries (SP)", key="sp_waiter")
-    if show_sp:
+    tab_carta, tab_stampa, tab_scheda = st.tabs(
+        ["Carta vini", "Carta stampabile", "Scheda tecnica"]
+    )
+
+    with tab_carta:
+        rows = run_query(
+            "SELECT * FROM v_carta_vini_cameriere WHERE id_cantina = %s",
+            (id_cantina(u),),
+        )
+        st.dataframe(rows)
+
+    with tab_stampa:
         st.subheader("Printable wine list")
         st.dataframe(call_proc("carta_vini_stampa", (id_cantina(u),)))
+
+    with tab_scheda:
         st.subheader("Wine technical sheet")
         lista_vini = run_query(
             "SELECT b.id_bevanda, b.nome FROM bevanda b "
@@ -143,10 +155,7 @@ def waiter_page(u):
             "WHERE b.attivo = TRUE ORDER BY b.nome"
         )
         scelta_v = st.selectbox("Wine", lista_vini, format_func=lambda x: x["nome"])
-        st.dataframe(call_proc("vino_tecnical_data", (scelta_v["id_bevanda"],)))
-    else:
-        rows = run_query(
-            "SELECT * FROM v_carta_vini_cameriere WHERE id_cantina = %s",
-            (id_cantina(u),),
-        )
-        st.dataframe(rows)
+        if scelta_v:
+            st.dataframe(call_proc("vino_tecnical_data", (scelta_v["id_bevanda"],)))
+        else:
+            st.info("No wine available for a technical sheet.")

@@ -517,6 +517,19 @@ non-chiave che dipende da una sola parte della PK).
 
 -> **tutto lo schema è in 2NF**.
 
+> **Nota di coerenza — `Produttore.paese` ricondotto alla decomposizione Paese/Regione.**
+> In una prima stesura `Produttore` conservava il paese come **stringa libera**
+> (`paese VARCHAR`). Non era, a rigore, una violazione di forma normale — `Produttore` ha
+> **PK semplice** (`id_produttore`), quindi è banalmente in 2NF/3NF a prescindere dal tipo
+> della colonna. Era però una **ridondanza incoerente** con la decomposizione 2NF che aveva
+> già promosso il Paese a entità propria (Paese/Regione, vedi la FD `nome_paese -> code_iso`
+> in §11.3): lo stesso paese finiva duplicato come testo in ogni produttore, con la classica
+> **anomalia di aggiornamento** (rinominare un paese avrebbe richiesto di toccare ogni riga)
+> e senza integrità referenziale (nessun vincolo che il valore fosse un paese esistente —
+> nel seed comparivano infatti nomi non presenti in `Paese`). La colonna è stata sostituita
+> da `Produttore.id_paese` **FK -> `Paese`**: il paese vive in un solo posto, l'integrità è
+> imposta dal DB e il modello è ora **uniforme** con `Regione`, che già puntava a `Paese`.
+
 ### 11.3 Terza forma normale (3NF)
 
 La 3NF vieta le **dipendenze transitive** fra attributi non-chiave (`A -> B -> C`) e le
@@ -563,7 +576,7 @@ considerata.
 | Forma normale | Esito | Dettaglio |
 |---|---|---|
 | **1NF** | rispettata da tutto lo schema | colonne atomiche; multivalore già eliminati in Sez. 9.2 (luppoli/malti/ingredienti -> tabelle dedicate) |
-| **2NF** | rispettata da tutto lo schema | 17 entità a PK semplice -> automatico; 5 a PK composta verificate (dipendenza piena su `Composto`/`Contiene_voce`; 3 all-key banali) |
+| **2NF** | rispettata da tutto lo schema | 17 entità a PK semplice -> automatico; 5 a PK composta verificate (dipendenza piena su `Composto`/`Contiene_voce`; 3 all-key banali). `Produttore.paese` ricondotto a FK `id_paese -> Paese` per coerenza con la decomposizione (nota in §11.2) |
 | **3NF** | rispettata salvo 2 scelte deliberate | violazioni consapevoli: `giacenza` (colonna calcolata) e `Movimenti.id_cantina` (transitiva via dipendente), motivate in Sez. 8/8.1 e mantenute dai trigger |
 
 ---

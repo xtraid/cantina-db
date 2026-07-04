@@ -12,7 +12,7 @@ _ROLE_SECTION = {
 
 
 def _role_credentials():
-    """Pick the MySQL user/password for the current request.
+    """Picks the MySQL user/password for the current request.
     Before login (no user in session) we use the `login` bootstrap account,
     which may only read dipendente/cantina to verify credentials. Once a user
     is logged in we connect as their per-role MySQL user, so GRANT/REVOKE
@@ -23,7 +23,7 @@ def _role_credentials():
 
 
 def get_connection():
-    """Connect to MariaDB as the current role's MySQL user (secrets.toml)."""
+    """Connects to MariaDB as the current role's MySQL user (secrets.toml)."""
     cfg = st.secrets["mysql"]
     creds = _role_credentials()
     return pymysql.connect(
@@ -39,8 +39,8 @@ def get_connection():
 
 
 def run_query(sql, params=None):
-    """ "Execute a Select and returns the output rows,
-    'params' runs separatly from Sql"""
+    """Executes a SELECT and returns the fetched rows. `params` is bound
+    separately from the SQL text, not interpolated into it."""
     conn = get_connection()
     try:
         with conn.cursor() as cur:
@@ -51,7 +51,7 @@ def run_query(sql, params=None):
 
 
 def call_proc(name, args=()):
-    """Calls store procedure and returns the result records"""
+    """Calls a stored procedure and returns its result rows."""
     conn = get_connection()
     try:
         with conn.cursor() as cur:
@@ -62,8 +62,9 @@ def call_proc(name, args=()):
 
 
 def run_write(sql, params=None):
-    """Execute a insert,
-    'params' runs separatly from Sql"""
+    """Executes a write statement (INSERT/UPDATE) inside a transaction:
+    commits on success, rolls back on error. `params` is bound separately
+    from the SQL text."""
     conn = get_connection()
     try:
         with conn.cursor() as cur:
@@ -77,8 +78,8 @@ def run_write(sql, params=None):
 
 
 def call_proc_write(name, args=()):
-    """Call a writing stored procedure: commit on success, rollback on error.
-    Returns the procedure's result rows (e.g. the new id)."""
+    """Calls a writing stored procedure: commits on success, rolls back on
+    error. Returns the procedure's result rows (e.g. the new id)."""
     conn = get_connection()
     try:
         with conn.cursor() as cur:

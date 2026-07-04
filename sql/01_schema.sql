@@ -1,11 +1,7 @@
--- ============================================================
---  Gestione Cantina / Azienda Vinicola - Schema relazionale
---  MariaDB 10.6+ (InnoDB, utf8mb4)
---
---  Traduzione del modello logico in DDL; ogni relazione e'
---  annotata con le rispettive cardinalita'. Script re-eseguibile:
---  i DROP iniziali ricreano lo schema da zero.
--- ============================================================
+-- Winery / wine company management - relational schema.
+-- MariaDB 10.6+ (InnoDB, utf8mb4). Translation of the logical model into DDL;
+-- each relationship is annotated with its cardinalities.
+-- Re-runnable script: the initial DROPs recreate the schema from scratch.
 
 -- USE cantina;
 
@@ -35,7 +31,7 @@ DROP TABLE IF EXISTS cantina;
 DROP TABLE IF EXISTS azienda;
 SET FOREIGN_KEY_CHECKS = 1;
 
--- ===================== ANAGRAFICHE =====================
+-- Master data
 
 CREATE TABLE azienda (
     id_azienda                INT AUTO_INCREMENT PRIMARY KEY,
@@ -61,23 +57,25 @@ CREATE TABLE cantina (
     CONSTRAINT fk_cantina_azienda
         FOREIGN KEY (id_azienda) REFERENCES azienda(id_azienda)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
--- "Possiede": Azienda (1:N) - Cantina (1:1) => FK su Cantina, NOT NULL
+-- "Possiede": Azienda (1:N) - Cantina (1:1) => FK on Cantina, NOT NULL
 
 CREATE TABLE dipendente (
     id_dipendente       INT AUTO_INCREMENT PRIMARY KEY,
     matricola           INT NOT NULL UNIQUE,
     nome                VARCHAR(100) NOT NULL,
     cognome             VARCHAR(100) NOT NULL,
-    ruolo               VARCHAR(100),
+    ruolo               VARCHAR(100) NOT NULL,
     username            VARCHAR(100) UNIQUE,
     password_hash       VARCHAR(255),
     email               VARCHAR(255),
     attivo              BOOLEAN DEFAULT TRUE,
     id_cantina          INT NOT NULL,
     CONSTRAINT fk_dipendente_cantina
-        FOREIGN KEY (id_cantina) REFERENCES cantina(id_cantina)
+        FOREIGN KEY (id_cantina) REFERENCES cantina(id_cantina),
+    CONSTRAINT chk_dipendente_ruolo
+        CHECK (ruolo IN ('titolare', 'magazziniere', 'cameriere'))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
--- "Lavora_in": Dipendente (1:1) - Cantina (1:N) => FK su Dipendente, NOT NULL
+-- "Lavora_in": Dipendente (1:1) - Cantina (1:N) => FK on Dipendente, NOT NULL
 
 CREATE TABLE paese (
     id_paese            INT AUTO_INCREMENT PRIMARY KEY,
@@ -94,15 +92,19 @@ CREATE TABLE regione (
         FOREIGN KEY (id_paese) REFERENCES paese(id_paese),
     CONSTRAINT uq_regione_paese_regione UNIQUE (id_paese, nome_regione)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
--- Decomposizione 2NF: code_iso (proprieta' del Paese) separato da Regione (vedi progettazione sez. 11)
+-- 2NF decomposition: code_iso (a property of Paese) separated from Regione (see design doc sec. 11)
 
 CREATE TABLE produttore (
     id_produttore       INT AUTO_INCREMENT PRIMARY KEY,
     nome                VARCHAR(255) NOT NULL,
-    paese               VARCHAR(100),
+    id_paese            INT,
     sito_web            VARCHAR(255),
-    attivo              BOOLEAN DEFAULT TRUE
+    attivo              BOOLEAN DEFAULT TRUE,
+    CONSTRAINT fk_produttore_paese
+        FOREIGN KEY (id_paese) REFERENCES paese(id_paese)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+-- 2NF: the producer's country is a FK to `paese`, no longer a free string
+-- (consistent with the regione decomposition, see design doc sec. 11)
 
 CREATE TABLE fornitore (
     id_fornitore        INT AUTO_INCREMENT PRIMARY KEY,
@@ -122,12 +124,12 @@ CREATE TABLE vitigno (
     sinonimo            VARCHAR(150)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ===== BEVANDA (padre) + GENERALIZZAZIONE TOTALE/ESCLUSIVA (t,d) =====
+-- BEVANDA (parent) + total/exclusive generalization (t,d)
 
 CREATE TABLE bevanda (
     id_bevanda          INT AUTO_INCREMENT PRIMARY KEY,
     nome                VARCHAR(255) NOT NULL,
-    categoria           VARCHAR(100) NOT NULL,          -- discriminante (t,d)
+    categoria           VARCHAR(100) NOT NULL,          -- discriminator (t,d)
     gradazione_alcolica DECIMAL(5,2),
     volume              DECIMAL(8,2),
     is_biologico        BOOLEAN DEFAULT FALSE,
@@ -136,7 +138,7 @@ CREATE TABLE bevanda (
     foto_url            VARCHAR(500),
     attivo              BOOLEAN DEFAULT TRUE,
     id_produttore       INT NOT NULL,
-    id_regione          INT,                   -- provenienza opzionale
+    id_regione          INT,                   -- optional origin
     CONSTRAINT fk_bevanda_produttore
         FOREIGN KEY (id_produttore) REFERENCES produttore(id_produttore),
     CONSTRAINT fk_bevanda_regione
@@ -144,8 +146,8 @@ CREATE TABLE bevanda (
     CONSTRAINT chk_bevanda_categoria
         CHECK (categoria IN ('VINO','BIRRA','SUPER_ALCOLICO','ANALCOLICO'))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
--- "Produce": Produttore (1:N) - Bevanda (1:1) => FK su Bevanda, NOT NULL
--- "Proviene": Bevanda (0:1) - Regione (0:N) => FK su Bevanda, NULLABLE
+-- "Produce": Produttore (1:N) - Bevanda (1:1) => FK on Bevanda, NOT NULL
+-- "Proviene": Bevanda (0:1) - Regione (0:N) => FK on Bevanda, NULLABLE
 
 CREATE TABLE vino (
     id_bevanda          INT PRIMARY KEY,
@@ -201,7 +203,7 @@ CREATE TABLE analcolico (
         FOREIGN KEY (id_bevanda) REFERENCES bevanda(id_bevanda) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ===== ATTRIBUTI MULTIVALORE -> TABELLE PONTE (1NF) =====
+-- Multivalued attributes -> bridge tables (1NF)
 
 CREATE TABLE birra_luppolo (
     id_bevanda          INT NOT NULL,
@@ -227,7 +229,7 @@ CREATE TABLE analcolico_ingrediente (
         FOREIGN KEY (id_bevanda) REFERENCES analcolico(id_bevanda) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ===== DETTAGLI DEL SOLO VINO =====
+-- Wine-only details
 
 CREATE TABLE vinificazione (
     id_vinificazione    INT AUTO_INCREMENT PRIMARY KEY,
@@ -247,13 +249,13 @@ CREATE TABLE affinamento (
     durata_bottiglia_mesi SMALLINT,
     tipo_legno          VARCHAR(100),
     formato_legno       VARCHAR(100),
-    id_bevanda          INT UNIQUE,   -- nullable: 0:1 lato Affinamento
+    id_bevanda          INT UNIQUE,   -- nullable: 0:1 on the Affinamento side
     CONSTRAINT fk_affinamento_vino
         FOREIGN KEY (id_bevanda) REFERENCES vino(id_bevanda)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 -- "Viene_affinato": Vino (1:1) - Affinamento (0:1)
 
--- ===== N:M Vino - Vitigno ("Composto") =====
+-- N:M Vino - Vitigno ("Composto")
 
 CREATE TABLE vino_vitigno (
     id_bevanda          INT NOT NULL,
@@ -267,7 +269,7 @@ CREATE TABLE vino_vitigno (
         FOREIGN KEY (id_vitigno) REFERENCES vitigno(id_vitigno)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ===== MOVIMENTI =====
+-- Movements
 
 CREATE TABLE movimenti (
     id_movimento        INT AUTO_INCREMENT PRIMARY KEY,
@@ -275,7 +277,7 @@ CREATE TABLE movimenti (
     quantita_bottiglie  INT NOT NULL,
     prezzo_unitario     DECIMAL(10,2),
     data_ora            TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    id_bevanda          INT NOT NULL,      -- "Riguarda": Bevanda - Movimenti (base della giacenza per bevanda,cantina)
+    id_bevanda          INT NOT NULL,      -- "Riguarda": Bevanda - Movimenti (basis of the stock per bevanda,cantina)
     id_dipendente       INT NOT NULL,      -- "Registra": Dipendente (0:N) - Movimenti (1:1)
     id_cantina          INT NOT NULL,      -- "Avviene_in": Cantina (0:N) - Movimenti (1:1)
     id_fornitore        INT,               -- "Coinvolge": Fornitore (0:N) - Movimenti (0:1)
@@ -292,14 +294,14 @@ CREATE TABLE movimenti (
     CONSTRAINT chk_movimenti_acquisto CHECK (tipo <> 'ACQUISTO' OR id_fornitore IS NOT NULL)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ===== LISTINO / CARTA VINI =====
+-- Price list / wine list
 
 CREATE TABLE listino (
     id_listino          INT AUTO_INCREMENT PRIMARY KEY,
     prezzo_vendita      DECIMAL(10,2),
     prezzo_acquisto     DECIMAL(10,2),
     iva                 DECIMAL(5,2),
-    giacenza            INT NOT NULL DEFAULT 0,   -- derivata dai movimenti, mantenuta dai trigger
+    giacenza            INT NOT NULL DEFAULT 0,   -- derived from movimenti, maintained by the triggers
     attivo              BOOLEAN DEFAULT TRUE,
     data_ultimo_aggiornamento TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     id_bevanda          INT NOT NULL,   -- "Riguarda": Bevanda (0:N) - Listino (1:1)
@@ -310,7 +312,7 @@ CREATE TABLE listino (
         FOREIGN KEY (id_cantina) REFERENCES cantina(id_cantina),
     CONSTRAINT chk_listino_prezzo CHECK (prezzo_vendita >= prezzo_acquisto),
     CONSTRAINT chk_listino_giacenza CHECK (giacenza >= 0),
-    CONSTRAINT uq_listino_bevanda_cantina UNIQUE (id_cantina, id_bevanda)  -- una bevanda al massimo 1 volta per cantina
+    CONSTRAINT uq_listino_bevanda_cantina UNIQUE (id_cantina, id_bevanda)  -- a beverage at most once per winery
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE carta_vini (
@@ -343,7 +345,7 @@ CREATE TABLE carta_vini_voce (
         FOREIGN KEY (id_listino) REFERENCES listino(id_listino)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ===== INDICI SULLE FK =====
+-- Indexes on the FKs
 
 CREATE INDEX idx_cantina_azienda       ON cantina(id_azienda);
 CREATE INDEX idx_dipendente_cantina    ON dipendente(id_cantina);

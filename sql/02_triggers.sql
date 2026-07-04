@@ -23,10 +23,10 @@ CREATE TRIGGER follow_up AFTER INSERT
     IF NEW.tipo IN ('CARICO', 'ACQUISTO') THEN
       UPDATE listino SET giacenza = giacenza + NEW.quantita_bottiglie
       WHERE id_cantina = NEW.id_cantina AND id_bevanda = NEW.id_bevanda;
-      -- ROW_COUNT() letto SUBITO dopo l'UPDATE: 0 righe = la coppia
-      -- (cantina, bevanda) non è a listino → il carico va respinto, altrimenti
-      -- la giacenza andrebbe persa in silenzio. Sicuro perché quantita_bottiglie>0
-      -- (chk_movimenti_quantita) rende la riga sempre "changed".
+      -- ROW_COUNT() read RIGHT after the UPDATE: 0 rows = the
+      -- (cantina, bevanda) pair is not in listino → the load must be rejected, otherwise
+      -- the stock would be silently lost. Safe because quantita_bottiglie>0
+      -- (chk_movimenti_quantita) always makes the row "changed".
       IF ROW_COUNT() = 0 THEN
         SIGNAL SQLSTATE '45000'
         SET MESSAGE_TEXT = 'Carico su bevanda non presente nel listino della cantina';

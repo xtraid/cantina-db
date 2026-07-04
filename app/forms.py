@@ -65,7 +65,7 @@ def movement_form(u):
 
 
 def listino_form(u):
-    """Add a beverage from the global catalog to this cellar's price list."""
+    """Adds a beverage from the global catalog to this cellar's price list."""
     bevande = run_query(
         "SELECT b.id_bevanda, b.nome FROM bevanda b "
         "WHERE b.attivo = TRUE "
@@ -113,7 +113,7 @@ def listino_form(u):
 
 
 def edit_listino_form(u):
-    """Edit prices/VAT and soft-delete a price-list row of the magazziniere's
+    """Edits prices/VAT and soft-deletes a price-list row of the magazziniere's
     own cellar. Prices, VAT and `attivo` are exactly the columns the role may
     UPDATE (column-level GRANT); giacenza is never touched here — it is kept
     consistent only by the movimenti triggers. Soft-delete just flips `attivo`
@@ -196,7 +196,7 @@ def edit_listino_form(u):
 
 
 def new_beverage_form(u):
-    """Create a brand-new beverage in the global catalog (bevanda + subtype),
+    """Creates a brand-new beverage in the global catalog (bevanda + subtype),
     optionally creating its producer, atomically via the crea_bevanda SP."""
     nome = st.text_input("Name", key="nb_nome")
     categoria = st.selectbox(
@@ -221,12 +221,20 @@ def new_beverage_form(u):
         key="nb_prod",
     )
     prod_nome = None
-    prod_paese = None
+    prod_id_paese = None
     if scelta_p["id_produttore"] is None:
         prod_nome = st.text_input("New producer name", key="nb_prod_nome")
-        prod_paese = st.text_input(
-            "New producer country (optional)", key="nb_prod_paese"
+        paesi = run_query(
+            "SELECT id_paese, nome_paese FROM paese ORDER BY nome_paese"
         )
+        NO_COUNTRY = {"id_paese": None, "nome_paese": "— none —"}
+        scelta_paese = st.selectbox(
+            "New producer country (optional)",
+            [NO_COUNTRY] + paesi,
+            format_func=lambda p: p["nome_paese"],
+            key="nb_prod_paese",
+        )
+        prod_id_paese = scelta_paese["id_paese"]
 
     # Wine-only details: shown only when category is VINO
     annata = colore = None
@@ -302,7 +310,7 @@ def new_beverage_form(u):
                     is_biologico,
                     scelta_p["id_produttore"],
                     prod_nome or None,
-                    prod_paese or None,
+                    prod_id_paese,
                     annata,
                     colore or None,
                     vitigni_json,

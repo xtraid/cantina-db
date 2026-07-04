@@ -4,8 +4,10 @@ from db import run_query
 
 
 def log_in(username, password):
-    """search username and
-    check if the password hash is the same"""
+    """Looks up the given username and checks the password against its
+    stored bcrypt hash. Returns the employee row (dict, includes the
+    joined cantina.id_azienda) on match, None if the username is unknown,
+    inactive, or the password does not match."""
 
     rows = run_query(
         "SELECT d.id_dipendente, d.nome, d.cognome, d.ruolo, d.id_cantina, d.password_hash, c.id_azienda "
@@ -23,12 +25,13 @@ def log_in(username, password):
 
 
 def id_azienda(u):
-    """Company id of the logged-in user — tenant scope for owner-level
-    queries/SP. Set at login (see log_in), so no extra DB round-trip."""
+    """Returns the company id of the logged-in user — tenant scope for
+    owner-level queries/SP. Set at login (see log_in), so no extra DB
+    round-trip."""
     return u["id_azienda"]
 
 
 def id_cantina(u):
-    """Cellar id of the logged-in user — tenant scope for warehouse-level
-    queries/SP. Set at login (see log_in)."""
+    """Returns the cellar id of the logged-in user — tenant scope for
+    warehouse-level queries/SP. Set at login (see log_in)."""
     return u["id_cantina"]

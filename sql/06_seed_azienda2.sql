@@ -1,9 +1,7 @@
--- ============================================================================
--- 06_seed_azienda2.sql — Seconda azienda (dati dimostrativi).
--- Serve a mostrare lo scoping per azienda: un titolare vede/gestisce solo le
--- cantine della propria azienda. Carica DOPO 01_schema (indipendente dai trigger).
--- Titolare demo: username 'm.verdi', password 'verdi123'.
--- ============================================================================
+-- 06_seed_azienda2.sql — Second company (demo data).
+-- Serves to show per-company scoping: an owner sees/manages only the wineries
+-- of their own company. Load AFTER 01_schema (independent of the triggers).
+-- Demo owner: username 'm.verdi', password 'verdi123'.
 
 USE cantina;
 
