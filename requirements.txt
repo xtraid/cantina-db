@@ -1,0 +1,5 @@
+# Streamlit Community Cloud reads this at the repo root to build the app env.
+# Mirrors app/pyproject.toml; the local dev env is managed with uv.
+streamlit>=1.58.0
+pymysql>=1.2.0
+bcrypt>=5.0.0

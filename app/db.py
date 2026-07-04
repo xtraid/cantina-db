@@ -22,6 +22,15 @@ def _role_credentials():
     return st.secrets["mysql"][section]
 
 
+def _ssl_options():
+    """TLS options for the connection. Managed databases (e.g. Aiven) require
+    it: when `ssl_ca` in secrets points at a CA certificate we open a verified
+    TLS connection. Locally, with no `ssl_ca`, we connect in plaintext as
+    before, so the same code runs against the local MariaDB unchanged."""
+    ca = st.secrets["mysql"].get("ssl_ca")
+    return {"ssl_ca": ca} if ca else {}
+
+
 def get_connection():
     """Connects to MariaDB as the current role's MySQL user (secrets.toml)."""
     cfg = st.secrets["mysql"]
@@ -35,6 +44,7 @@ def get_connection():
         charset="utf8mb4",
         cursorclass=pymysql.cursors.DictCursor,
         autocommit=False,
+        **_ssl_options(),
     )
 
 
