@@ -90,7 +90,10 @@ CREATE PROCEDURE vino_tecnical_data (IN p_id INT)
         LEFT JOIN affinamento af using (id_bevanda)
         INNER JOIN produttore p using(id_produttore)
         LEFT JOIN regione r using(id_regione)
-        LEFT JOIN paese pa USING(id_paese)
+        -- paese/zona of the bevanda come from its regione (bevanda.id_regione).
+        -- Explicit ON: since produttore.paese became id_paese (2NF), both p and r
+        -- carry id_paese, so a USING(id_paese) here would be ambiguous.
+        LEFT JOIN paese pa ON pa.id_paese = r.id_paese
         WHERE id_bevanda = p_id;
     END$$
 DELIMITER ;
