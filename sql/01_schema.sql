@@ -71,7 +71,7 @@ CREATE TABLE dipendente (
     attivo              BOOLEAN DEFAULT TRUE,
     id_cantina          INT NOT NULL,
     CONSTRAINT fk_dipendente_cantina
-        FOREIGN KEY (id_cantina) REFERENCES cantina(id_cantina),
+        FOREIGN KEY (id_cantina) REFERENCES cantina(id_cantina),xd
     CONSTRAINT chk_dipendente_ruolo
         CHECK (ruolo IN ('titolare', 'magazziniere', 'cameriere'))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

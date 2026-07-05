@@ -397,7 +397,8 @@ violazioni. Di conseguenza ogni chiave naturale resta protetta da un vincolo `UN
 
 | Entità | PK | Vincolo / note |
 |---|---|---|
-| Regione | id_regione | `UNIQUE(nome_paese)` |
+| Paese | id_paese | `UNIQUE(nome_paese)` (decomposta da Regione, vedi Sez. 11.2) |
+| Regione | id_regione | FK `id_paese`; `UNIQUE(id_paese, nome_regione)` |
 | Vitigno | id_vitigno | `UNIQUE(nome)` |
 | Dipendente | id_dipendente | `UNIQUE(matricola)` |
 | Cantina | id_cantina | FK `id_azienda`; opz. `UNIQUE(id_azienda, numero)` |
@@ -424,8 +425,9 @@ dalle FK coinvolte (è già univoca e significativa, evita un surrogato inutile)
 - Azienda(**id_azienda**, ragione_sociale, p_iva, tipo, indirizzo_sede_principale, email, pec, telefono, titolare, sito_web, attivo)
 - Cantina(**id_cantina**, nome, indirizzo, tipo, id_azienda -> Azienda)
 - Dipendente(**id_dipendente**, matricola [U], nome, cognome, ruolo, username, password_hash, email, attivo, id_cantina -> Cantina)
-- Regione(**id_regione**, nome_paese [U], code_iso, nome_regione, zona)
-- Produttore(**id_produttore**, nome, paese, sito_web, attivo)
+- Paese(**id_paese**, nome_paese [U], code_iso)
+- Regione(**id_regione**, nome_regione, zona, id_paese -> Paese) — UNIQUE(id_paese, nome_regione)
+- Produttore(**id_produttore**, nome, sito_web, attivo, id_paese -> Paese [N])
 - Fornitore(**id_fornitore**, ragione_sociale, p_iva, is_cliente, is_fornitore, indirizzo, telefono, email, attivo)
 - Vitigno(**id_vitigno**, nome [U], sinonimo)
 
@@ -515,6 +517,14 @@ non-chiave che dipende da una sola parte della PK).
     non-chiave) -> banalmente in 2NF (e 3NF): non esiste attributo che possa dipendere in
     modo parziale o transitivo da alcunché.
 
+**Decomposizione Paese/Regione (per preservare la 2NF).** Per rappresentare più regioni dello
+stesso paese (es. Piemonte e Veneto in Italia) la chiave naturale di una `Regione` unica
+sarebbe `(nome_paese, nome_regione)`; ma `code_iso` dipende **solo** da `nome_paese` — una
+*parte* della chiave -> **dipendenza parziale**, violazione della 2NF (il codice ISO è una
+proprietà del Paese, non della regione). Si **decompone** quindi in `Paese(`**nome_paese**`,
+code_iso)` e `Regione(`**nome_regione**`, zona, -> Paese)`: così in `Paese` `code_iso` dipende
+dall'intera chiave e `Regione` non porta più attributi del Paese -> entrambe in 2NF.
+
 -> **tutto lo schema è in 2NF**.
 
 > **Nota di coerenza — `Produttore.paese` ricondotto alla decomposizione Paese/Regione.**
@@ -537,7 +547,7 @@ La 3NF vieta le **dipendenze transitive** fra attributi non-chiave (`A -> B -> C
 costruzione**: ogni tabella descrive una sola entità o associazione e i suoi attributi
 descrivono direttamente la chiave. Le poche dipendenze funzionali fra attributi naturali
 hanno come **determinante una chiave candidata** e quindi non violano la 3NF — per esempio
-in `Regione` la FD `nome_paese -> code_iso` (il codice ISO è determinato dal paese) ha per
+in `Paese` la FD `nome_paese -> code_iso` (il codice ISO è determinato dal paese) ha per
 determinante `nome_paese`, che è chiave candidata (`UNIQUE`).
 
 Inoltre, gli attributi derivabili che **non vengono memorizzati** (prezzo IVA-incluso di una
@@ -1174,7 +1184,7 @@ solo tramite la UI:
   (la colonna `ruolo` non ha un CHECK nello schema, quindi il vincolo è imposto qui).
 - **Scoping per azienda**: riceve l'`id_azienda` del titolare loggato e rifiuta con `SIGNAL`
   ('Cantina fuori dalla tua azienda') qualunque `p_id_cantina` non appartenente a quell'azienda.
-  È la controparte *server-side* del filtro applicativo di Sez. 12.2.1: la tendina mostra solo
+  È la controparte *server-side* del filtro applicativo di Sez. 12.2.2: la tendina mostra solo
   le cantine dell'azienda, e la SP lo impone comunque (difesa in profondità).
 
 La **password non è mai gestita in chiaro dal DB**: l'app calcola l'hash bcrypt

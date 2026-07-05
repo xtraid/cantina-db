@@ -141,7 +141,9 @@ Two companies, to show per-company scoping. Passwords are demo-only.
 
 ## Status
 
-🚧 Work in progress — schema, triggers, all three per-role views and the 10 example
+✅ **Working demo — not a finished product.** Everything below works end-to-end and is
+validated on MariaDB, but the project is slated for a **ground-up rework** (see Roadmap
+below). Schema, triggers, all three per-role views and the 10 example
 queries (stored procedures) complete and validated on MariaDB; the design document
 (IT + EN) is complete. The Streamlit app has employee login and a per-role page
 (owner / warehouse / waiter), each **row-scoped to its own cellar** and able to run
@@ -160,10 +162,25 @@ from the warehouse role's per-column UPDATE grant: only the triggers may write i
 warehouse page also **edits its own price list** (price fixes, soft-delete via `attivo = FALSE`),
 while movements stay an **append-only ledger** — a mistake is corrected by posting a
 compensating movement (*storno*), not by rewriting history. A **public demo** runs on Streamlit
-Community Cloud against a managed MySQL over TLS (link above). Still to come: new-company
-onboarding (currently DBA-only) and the `DEMO.md` screenshots.
+Community Cloud against a managed MySQL over TLS (link above), and [`DEMO.md`](DEMO.md) is a full
+**screenshot walkthrough** of the UI with triggers and stored procedures firing live. The one
+feature deliberately out of scope — new-company onboarding (currently DBA-only) — is tracked
+under Roadmap below.
 
 ## Roadmap / future work
+
+This repo is a **working demo**, not the final product — the next phase is a
+**ground-up rework**, not incremental patching:
+
+- **Architecture → distributed, centralized-sync.** Move off the single monolithic
+  MariaDB to a **central server that syncs with per-cellar clients**: each cellar runs
+  a **local SQLite** database behind a thin client app, so everyday reads/writes hit
+  local data and **query latency drops**, with the central node as the source of truth
+  and the aggregation point across cellars.
+- **Web app → rebuilt.** The Streamlit UI is demo scaffolding; the real front-end will
+  be a proper web app — **likely JS/React, still to be decided**.
+- **Security & interfaces → redone from scratch.** Both the authorization model (see the
+  known-limitation note below) and the UI are to be re-designed, not retrofitted.
 
 - **Precise movement editing (planned).** A later iteration will re-implement the
   ledger from *append-only* to **directly editable**: `UPDATE`/`DELETE` on
@@ -239,7 +256,9 @@ Schema E-R completo e scelte di progetto in
 
 ### Stato
 
-🚧 In sviluppo — schema, trigger, tutte e tre le viste per ruolo e le 10 query di
+✅ **Demo funzionante — non un prodotto finito.** Tutto ciò che segue funziona end-to-end
+ed è validato su MariaDB, ma il progetto è destinato a un **rework da zero** (vedi Roadmap
+sotto). Schema, trigger, tutte e tre le viste per ruolo e le 10 query di
 esempio (stored procedure) completi e validati su MariaDB; il documento di
 progettazione (IT + EN) è completo. L'app Streamlit ha il login dipendente e una
 pagina per ruolo (titolare / magazziniere / cameriere), ciascuna **filtrata sulla
@@ -260,10 +279,25 @@ dall'UPDATE per colonna del magazziniere: la scrivono solo i trigger). La pagina
 inoltre **modifica il proprio listino** (correzione prezzi, soft-delete via `attivo = FALSE`),
 mentre i movimenti restano un **registro append-only** — un errore si corregge con un movimento
 di compensazione (*storno*), non riscrivendo lo storico. Una **demo pubblica** gira su Streamlit
-Community Cloud contro un MySQL gestito via TLS (link sopra). Ancora da fare: l'onboarding di
-una nuova azienda (per ora solo via DBA) e gli screenshot di `DEMO.md`.
+Community Cloud contro un MySQL gestito via TLS (link sopra), e [`DEMO.md`](DEMO.md) è una
+**guida illustrata** all'interfaccia con screenshot e trigger/SP dal vivo. L'unica funzione
+volutamente fuori scope — l'onboarding di una nuova azienda (per ora solo via DBA) — è tracciata
+nella Roadmap qui sotto.
 
 ### Roadmap / sviluppi futuri
+
+Questo repo è una **demo funzionante**, non il prodotto finale — la fase successiva
+è un **rework da zero**, non una toppa incrementale:
+
+- **Architettura → distribuita, sync centralizzato.** Abbandonare la singola MariaDB
+  monolitica per un **server centrale che si sincronizza con client per cantina**: ogni
+  cantina esegue un **database SQLite locale** dietro una app client leggera, così le
+  letture/scritture quotidiane colpiscono dati locali e il **tempo di query cala**, con
+  il nodo centrale come fonte di verità e punto di aggregazione fra le cantine.
+- **App web → rifatta.** La UI Streamlit è un'impalcatura da demo; il front-end vero sarà
+  una vera web app — **probabilmente JS/React, ancora da decidere**.
+- **Sicurezza e interfacce → rifatte da zero.** Sia il modello di autorizzazione (vedi il
+  limite noto qui sotto) sia le interfacce vanno riprogettati, non rattoppati.
 
 - **Modifica puntuale dei movimenti (previsto).** Un'iterazione successiva
   reimplementerà il registro da *append-only* a **direttamente modificabile**:

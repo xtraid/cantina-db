@@ -6,8 +6,7 @@ fire triggers and stored procedures live**.
 
 > 🇮🇹 Versione italiana più sotto · [Italiano](#-guida-dimostrativa-versione-italiana)
 >
-> 📸 Screenshots go under `docs/screenshots/`. Each `> 📸 Screenshot:` marker
-> below names the shot to capture and its suggested filename.
+> 📸 Screenshots live in `docs/screenshots/` and are embedded inline below.
 
 ---
 
@@ -52,7 +51,7 @@ uv run streamlit run app.py
 
 Opens on `http://localhost:8501`.
 
-> 📸 Screenshot: login page — `docs/screenshots/01-login.png`
+![Login page — per-role sign-in](docs/screenshots/01-login.png)
 
 ### 0.3 Demo credentials
 
@@ -81,7 +80,9 @@ The simplest page: read-only, scoped to the waiter's own cellar.
 **Concept shown:** views as an *external schema* (each role sees only what it
 needs) + Sec. 14 queries runnable from the app.
 
-> 📸 Screenshot: waiter wine list + technical-sheet tab — `docs/screenshots/02-waiter.png`
+![Waiter — printable wine list (`carta_vini_stampa` SP)](docs/screenshots/02-waiter-printable.png)
+
+![Waiter — wine technical sheet on the "Scheda tecnica" tab (`vino_tecnical_data` SP recomposing the ISA hierarchy)](docs/screenshots/02-waiter.png)
 
 ---
 
@@ -114,7 +115,7 @@ Tab **"Register movement"**:
 **Concept shown:** controlled redundancy (derived stock) kept by triggers;
 non-negativity enforced at the model level.
 
-> 📸 Screenshot: oversell error on a too-large sale — `docs/screenshots/03-oversell.png`
+![Oversell blocked — a VENDITA larger than stock is rejected with "Bottiglie insufficienti" by the `oversell` trigger](docs/screenshots/03-oversell.png)
 
 ### 2.3 Add a beverage to the price list
 
@@ -139,7 +140,7 @@ beverage (parent + subtype + optionally a new producer), in a transaction.
 logical model — the user sends the whole blend, the SP validates `= 100` and
 writes it all atomically; the user never touches `vino_vitigno`.
 
-> 📸 Screenshot: New beverage form with multi-grape blend (Total 100%) — `docs/screenshots/04-new-beverage-blend.png`
+![New beverage form with a multi-grape blend (Nebbiolo 60 + Merlot 40, Total 100%)](docs/screenshots/04-new-beverage-blend.png)
 
 ---
 
@@ -152,7 +153,9 @@ writes it all atomically; the user never touches `vino_vitigno`.
   active employee, QC redundancy (0 rows = triggers correct), and **top sellers**
   per cellar/period (parametrized SP `top_seller`).
 
-> 📸 Screenshot: owner dashboard queries — `docs/screenshots/05-owner-dashboard.png`
+![Owner dashboard — warehouse value, average margin by category, blend wines](docs/screenshots/05-owner-dashboard.png)
+
+![Owner dashboard — most active employee, QC redundancy (0 rows = triggers correct), and the `top_seller` parametrized SP](docs/screenshots/05-owner-dashboard-queries.png)
 
 ### 3.2 Add an employee → SP `crea_dipendente` (server-side scoping)
 
@@ -164,7 +167,7 @@ Tab **"Add employee"**:
 | 3.2.2 | Fill in and create a warehouse/waiter user | The password is **bcrypt-hashed in the app**; the SP receives the hash already, the DB never sees the plaintext. |
 | 3.2.3 | (Defense in depth) The SP still checks that `id_cantina` belongs to your `id_azienda` | Even bypassing the UI, the server rejects with **"Cantina fuori dalla tua azienda"**. |
 
-> 📸 Screenshot: add-employee tab, winery dropdown limited to own company — `docs/screenshots/06-add-employee.png`
+![Owner "Add employee" tab — the SP `crea_dipendente` creates the user; the password is bcrypt-hashed app-side, the DB only ever sees the hash](docs/screenshots/06-add-employee.png)
 
 ---
 
@@ -180,7 +183,7 @@ Log out and back in as `m.verdi` (company **Cantine del Sole**).
 **Concept shown:** same pages, same code, fully separated data per company — both
 in the UI and inside the SPs.
 
-> 📸 Screenshot: m.verdi dashboard showing only its own cellars — `docs/screenshots/07-scoping.png`
+![m.verdi (Cantine del Sole) — the winery menu offers only Cantina Napoli / Enoteca Palermo, no Enoteca Adriatica data](docs/screenshots/07-scoping.png)
 
 ---
 
@@ -260,8 +263,7 @@ Percorso guidato per **vedere il progetto in funzione** dall'interfaccia
 Streamlit: login per ruolo, consultazione dati filtrati, e — soprattutto — le
 **scritture che fanno scattare trigger e stored procedure dal vivo**.
 
-> 📸 Gli screenshot vanno in `docs/screenshots/`. Ogni marcatore `> 📸 Screenshot:`
-> indica lo scatto da fare e il nome file suggerito.
+> 📸 Gli screenshot stanno in `docs/screenshots/` e sono inseriti inline qui sotto.
 
 ### 0. Preparazione
 
@@ -306,7 +308,7 @@ uv run streamlit run app.py
 
 Si apre il browser su `http://localhost:8501`.
 
-> 📸 Screenshot: pagina di login — `docs/screenshots/01-login.png`
+![Pagina di login — accesso per ruolo](docs/screenshots/01-login.png)
 
 #### 0.3 Credenziali demo
 
@@ -333,7 +335,9 @@ La pagina più semplice: sola lettura, filtrata sulla propria cantina.
 **Concetto mostrato:** viste come *schema esterno* (ogni ruolo vede solo ciò che
 gli compete) + query di Sez. 14 eseguibili dall'app.
 
-> 📸 Screenshot: carta vini cameriere + tab scheda tecnica — `docs/screenshots/02-waiter.png`
+![Cameriere — carta vini pronta per la stampa (SP `carta_vini_stampa`)](docs/screenshots/02-waiter-printable.png)
+
+![Cameriere — scheda tecnica del vino nel tab "Scheda tecnica" (SP `vino_tecnical_data` che ricompone la gerarchia ISA)](docs/screenshots/02-waiter.png)
 
 ### 2. Magazziniere — il cuore operativo (login: `m.ferri`)
 
@@ -364,7 +368,7 @@ Tab **"Register movement"**:
 **Concetto mostrato:** ridondanza controllata (giacenza derivata) mantenuta da
 trigger; vincolo di non-negatività imposto a livello di modello.
 
-> 📸 Screenshot: errore oversell su una vendita troppo grande — `docs/screenshots/03-oversell.png`
+![Oversell bloccato — una VENDITA più grande della giacenza viene respinta con "Bottiglie insufficienti" dal trigger `oversell`](docs/screenshots/03-oversell.png)
 
 #### 2.3 Aggiungi una bevanda a listino
 
@@ -389,7 +393,7 @@ bevanda completa (padre + sottotipo + eventuale produttore nuovo), in transazion
 modello logico — l'utente manda il blend intero, la SP valida `= 100` e scrive
 tutto atomicamente; l'utente non tocca mai la tabella `vino_vitigno`.
 
-> 📸 Screenshot: form "New beverage" con blend multi-vitigno (Total 100%) — `docs/screenshots/04-new-beverage-blend.png`
+![Form "New beverage" con blend multi-vitigno (Nebbiolo 60 + Merlot 40, Total 100%)](docs/screenshots/04-new-beverage-blend.png)
 
 ### 3. Titolare — visione d'azienda e permessi (login: `g.bernardi`)
 
@@ -400,7 +404,9 @@ tutto atomicamente; l'utente non tocca mai la tabella `vino_vitigno`.
   dipendente più attivo, QC ridondanza (0 righe = trigger corretti), e i
   **top seller** per cantina/periodo (SP parametrica `top_seller`).
 
-> 📸 Screenshot: dashboard titolare con le query — `docs/screenshots/05-owner-dashboard.png`
+![Dashboard titolare — valore di magazzino, margine medio per categoria, vini blend](docs/screenshots/05-owner-dashboard.png)
+
+![Dashboard titolare — dipendente più attivo, QC ridondanza (0 righe = trigger corretti) e la SP parametrica `top_seller`](docs/screenshots/05-owner-dashboard-queries.png)
 
 #### 3.2 Aggiungi un dipendente → SP `crea_dipendente` (scoping lato server)
 
@@ -412,7 +418,7 @@ Tab **"Add employee"**:
 | 3.2.2 | Compila e crea un magazziniere/cameriere | La password viene **hashata con bcrypt nell'app**; la SP riceve già l'hash, il DB non vede mai il testo in chiaro. |
 | 3.2.3 | (Difesa in profondità) La SP controlla comunque che `id_cantina` appartenga alla tua `id_azienda` | Anche aggirando la UI, il server rifiuta con **"Cantina fuori dalla tua azienda"**. |
 
-> 📸 Screenshot: tab "Add employee", menu cantine limitato alla propria azienda — `docs/screenshots/06-add-employee.png`
+![Tab "Add employee" del titolare — la SP `crea_dipendente` crea l'utente; la password è hashata con bcrypt lato app, il DB vede solo l'hash](docs/screenshots/06-add-employee.png)
 
 ### 4. Scoping per azienda (login: `m.verdi`)
 
@@ -426,7 +432,7 @@ Esci e rientra come `m.verdi` (azienda **Cantine del Sole**).
 **Concetto mostrato:** stesse pagine, stesso codice, dati completamente separati
 per azienda — sia in UI sia lato SP.
 
-> 📸 Screenshot: dashboard di m.verdi con solo le proprie cantine — `docs/screenshots/07-scoping.png`
+![m.verdi (Cantine del Sole) — il menu cantine propone solo Cantina Napoli / Enoteca Palermo, nessun dato di Enoteca Adriatica](docs/screenshots/07-scoping.png)
 
 ### 5. Vincoli via trigger non raggiungibili dalla UI (bonus SQL)
 

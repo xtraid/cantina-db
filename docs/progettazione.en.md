@@ -497,7 +497,7 @@ surrogate):
 - Dipendente(**id_dipendente**, matricola [U], nome, cognome, ruolo, username, password_hash, email, attivo, id_cantina -> Cantina)
 - Paese(**id_paese**, nome_paese [U], code_iso)
 - Regione(**id_regione**, nome_regione, zona, id_paese -> Paese) — UNIQUE(id_paese, nome_regione)
-- Produttore(**id_produttore**, nome, paese, sito_web, attivo)
+- Produttore(**id_produttore**, nome, sito_web, attivo, id_paese -> Paese [N])
 - Fornitore(**id_fornitore**, ragione_sociale, p_iva, is_cliente, is_fornitore, indirizzo, telefono, email, attivo)
 - Vitigno(**id_vitigno**, nome [U], sinonimo)
 
@@ -1277,7 +1277,7 @@ just through the UI:
   (the `ruolo` column has no CHECK in the schema, so the constraint is enforced here).
 - **Per-company scoping**: it receives the logged-in owner's `id_azienda` and rejects with a
   `SIGNAL` ('Cantina fuori dalla tua azienda') any `p_id_cantina` that does not belong to that
-  company. This is the *server-side* counterpart of the application filter in Sec. 12.2.1: the
+  company. This is the *server-side* counterpart of the application filter in Sec. 12.2.2: the
   dropdown only shows the company's cellars, and the SP enforces it anyway (defense in depth).
 
 The **password is never handled in clear text by the DB**: the app computes the bcrypt hash
