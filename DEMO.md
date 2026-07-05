@@ -13,6 +13,10 @@ fire triggers and stored procedures live**.
 
 ## 0. Setup
 
+> 🌐 **No install needed:** a hosted demo runs at <https://cantina-db.streamlit.app/>
+> (first load may take ~30-60 s if the app was asleep). Skip to §0.3 for the
+> credentials, then follow the tour from §1.
+
 ### 0.1 Load the database
 
 From the repo root (see `README.md`):
@@ -100,7 +104,12 @@ Tab **"Register movement"**:
 | 2.2.1 | Register a **CARICO** (load) of N bottles of a listed beverage | Back on **Stock**: the quantity is **up by N**. You didn't write it — the `follow_up` `AFTER INSERT` trigger did. |
 | 2.2.2 | Register a **VENDITA** (sale) of a few bottles | Stock **goes down**. |
 | 2.2.3 | Try a **VENDITA larger than stock** | ❌ Error **"Bottiglie insufficienti"**: the `oversell` `BEFORE INSERT` trigger blocks the shortfall *before* writing. Stock never goes negative. |
-| 2.2.4 | Try a **CARICO** on a beverage **not in this cellar's price list** | ❌ Error **"Carico su bevanda non presente nel listino della cantina"**: `follow_up` rejects the load instead of silently losing the stock. |
+
+> ℹ️ A fourth guard exists — loading a beverage **not in the cellar's price list** is
+> rejected by `follow_up` with *"Carico su bevanda non presente nel listino della
+> cantina"* instead of silently losing the stock. It cannot be triggered from the UI
+> (the movement form only offers beverages already on the price list), so it is
+> demonstrated via SQL in §5.
 
 **Concept shown:** controlled redundancy (derived stock) kept by triggers;
 non-negativity enforced at the model level.
@@ -195,10 +204,22 @@ INSERT INTO carta_vini_voce (id_carta_vini, id_listino, ordine)
 VALUES (1, 2, 99);   -- ❌ wine list in cellar 1, price-list entry in cellar 2
 ROLLBACK;
 
--- Grape percentage cap: the blend sum never exceeds 100
+-- Load on a beverage not in the cellar's price list (the §2.2 note): follow_up
+-- rejects it instead of silently losing the stock
 SET autocommit=0;
-INSERT INTO vino_vitigno (id_bevanda, id_vitigno, percentuale) VALUES (<wine>, 1, 60);
-INSERT INTO vino_vitigno (id_bevanda, id_vitigno, percentuale) VALUES (<wine>, 2, 50); -- ❌ 110 > 100
+INSERT INTO movimenti (tipo, quantita_bottiglie, id_bevanda, id_dipendente, id_cantina)
+VALUES ('CARICO', 5, 4, 2, 1);   -- ❌ bevanda 4 (Rioja) is listed only in cellar 2
+ROLLBACK;
+
+-- Grape percentage cap: the blend sum never exceeds 100.
+-- Needs a wine with an empty blend: every seeded / SP-created wine already sums
+-- to 100, so on those the FIRST insert below would already be rejected.
+SET autocommit=0;
+INSERT INTO produttore (nome) VALUES ('Y'); SET @p:=LAST_INSERT_ID();
+INSERT INTO bevanda (nome,categoria,id_produttore) VALUES ('Y','VINO',@p); SET @b:=LAST_INSERT_ID();
+INSERT INTO vino (id_bevanda) VALUES (@b);
+INSERT INTO vino_vitigno (id_bevanda, id_vitigno, percentuale) VALUES (@b, 1, 60);
+INSERT INTO vino_vitigno (id_bevanda, id_vitigno, percentuale) VALUES (@b, 2, 50); -- ❌ 110 > 100
 ROLLBACK;
 ```
 
@@ -210,7 +231,7 @@ ROLLBACK;
 |---|---|
 | External schema / per-role views | §1, §2.1, §3.1 (one view per role) |
 | Controlled redundancy + triggers | §2.2 (stock derived by `follow_up`) |
-| Procedural constraints (triggers) | §2.2.3-4 (`oversell`), §5 (`(t,d)`, wine list, grapes) |
+| Procedural constraints (triggers) | §2.2.3 (`oversell`), §5 (`(t,d)`, wine list, unlisted load, grapes) |
 | Transactions / atomicity | §2.4 (`crea_bevanda`), §3.2 (`crea_dipendente`) |
 | Query stored procedures | §1.2, §2.1, §3.1 (the 10 Sec. 14 queries) |
 | Application security | parameterized queries everywhere; bcrypt app-side (§3.2) |
@@ -229,9 +250,6 @@ ROLLBACK;
 - The exact `= 100` on the grape blend is enforced by the `crea_bevanda` SP; the
   `vino_vitigno` trigger is a safety net guaranteeing only `≤ 100` (exact equality
   isn't enforceable row-by-row without *deferred* constraints).
-- The parameterless Sec. 14 analytical queries (`valore_magazzino`,
-  `dipendente_piu_attivo`, `bevande_sotto_media`, …) are **deliberately global**
-  (exam-demonstrative): they are not scoped to the viewer's company.
 
 ---
 
@@ -246,6 +264,10 @@ Streamlit: login per ruolo, consultazione dati filtrati, e — soprattutto — l
 > indica lo scatto da fare e il nome file suggerito.
 
 ### 0. Preparazione
+
+> 🌐 **Senza installare nulla:** una demo pubblica gira su
+> <https://cantina-db.streamlit.app/> (il primo caricamento può richiedere ~30-60 s
+> se l'app era in sleep). Salta a §0.3 per le credenziali, poi segui il tour dal §1.
 
 #### 0.1 Carica il database
 
@@ -332,7 +354,12 @@ Tab **"Register movement"**:
 | 2.2.1 | Registra un **CARICO** di N bottiglie di una bevanda a listino | Torna su **Stock**: la giacenza è **aumentata di N**. Non l'hai scritta tu — l'ha fatto il trigger `follow_up` `AFTER INSERT`. |
 | 2.2.2 | Registra una **VENDITA** di poche bottiglie | La giacenza **cala**. |
 | 2.2.3 | Prova una **VENDITA più grande della giacenza** | ❌ Errore **"Bottiglie insufficienti"**: il trigger `oversell` `BEFORE INSERT` blocca lo scoperto *prima* di scrivere. La giacenza non va mai negativa. |
-| 2.2.4 | Prova un **CARICO** su una bevanda **non a listino** in questa cantina | ❌ Errore **"Carico su bevanda non presente nel listino della cantina"**: `follow_up` respinge il carico invece di perdere la giacenza in silenzio. |
+
+> ℹ️ Esiste una quarta guardia — il carico di una bevanda **non a listino** della
+> cantina viene respinto da `follow_up` con *"Carico su bevanda non presente nel
+> listino della cantina"* invece di perdere la giacenza in silenzio. Non è
+> raggiungibile dalla UI (il form movimenti propone solo bevande già a listino):
+> si dimostra via SQL nel §5.
 
 **Concetto mostrato:** ridondanza controllata (giacenza derivata) mantenuta da
 trigger; vincolo di non-negatività imposto a livello di modello.
@@ -421,10 +448,22 @@ INSERT INTO carta_vini_voce (id_carta_vini, id_listino, ordine)
 VALUES (1, 2, 99);   -- ❌ carta in cantina 1, listino in cantina 2
 ROLLBACK;
 
--- Tetto percentuali: la somma dei vitigni non supera 100
+-- Carico su bevanda non a listino della cantina (la nota di §2.2): follow_up
+-- lo respinge invece di perdere la giacenza in silenzio
 SET autocommit=0;
-INSERT INTO vino_vitigno (id_bevanda, id_vitigno, percentuale) VALUES (<vino>, 1, 60);
-INSERT INTO vino_vitigno (id_bevanda, id_vitigno, percentuale) VALUES (<vino>, 2, 50); -- ❌ 110 > 100
+INSERT INTO movimenti (tipo, quantita_bottiglie, id_bevanda, id_dipendente, id_cantina)
+VALUES ('CARICO', 5, 4, 2, 1);   -- ❌ la bevanda 4 (Rioja) è a listino solo in cantina 2
+ROLLBACK;
+
+-- Tetto percentuali: la somma dei vitigni non supera 100.
+-- Serve un vino con blend vuoto: ogni vino del seed / creato dalla SP somma già
+-- a 100, quindi su quelli verrebbe respinto già il PRIMO insert qui sotto.
+SET autocommit=0;
+INSERT INTO produttore (nome) VALUES ('Y'); SET @p:=LAST_INSERT_ID();
+INSERT INTO bevanda (nome,categoria,id_produttore) VALUES ('Y','VINO',@p); SET @b:=LAST_INSERT_ID();
+INSERT INTO vino (id_bevanda) VALUES (@b);
+INSERT INTO vino_vitigno (id_bevanda, id_vitigno, percentuale) VALUES (@b, 1, 60);
+INSERT INTO vino_vitigno (id_bevanda, id_vitigno, percentuale) VALUES (@b, 2, 50); -- ❌ 110 > 100
 ROLLBACK;
 ```
 
@@ -434,7 +473,7 @@ ROLLBACK;
 |---|---|
 | Schema esterno / viste per ruolo | §1, §2.1, §3.1 (una vista per ruolo) |
 | Ridondanza controllata + trigger | §2.2 (giacenza derivata da `follow_up`) |
-| Vincoli procedurali (trigger) | §2.2.3-4 (`oversell`), §5 (`(t,d)`, carta-vini, vitigni) |
+| Vincoli procedurali (trigger) | §2.2.3 (`oversell`), §5 (`(t,d)`, carta-vini, carico non a listino, vitigni) |
 | Transazioni / atomicità | §2.4 (`crea_bevanda`), §3.2 (`crea_dipendente`) |
 | Stored procedure di interrogazione | §1.2, §2.1, §3.1 (le 10 query di Sez. 14) |
 | Sicurezza applicativa | query parametrizzate ovunque; bcrypt lato app (§3.2) |
@@ -454,6 +493,3 @@ ROLLBACK;
 - Il `= 100` esatto sul blend vitigni è imposto dalla SP `crea_bevanda`; il
   trigger `vino_vitigno` fa da rete di sicurezza garantendo solo `≤ 100`
   (l'uguaglianza esatta non è imponibile riga-per-riga senza vincoli *deferred*).
-- Le query analitiche di Sez. 14 senza parametri (`valore_magazzino`,
-  `dipendente_piu_attivo`, `bevande_sotto_media`, …) sono **volutamente globali**
-  (a scopo dimostrativo d'esame): non sono filtrate sull'azienda di chi le esegue.

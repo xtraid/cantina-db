@@ -11,6 +11,10 @@ extended with a working demo application.
 
 > ▶ **Want to try it?** Step-by-step UI walkthrough (with triggers/SPs live) in
 > [`DEMO.md`](DEMO.md).
+>
+> 🌐 **Live demo:** <https://cantina-db.streamlit.app/> (Streamlit Community Cloud +
+> managed MySQL) — log in with the [demo credentials](#demo-credentials) below.
+> First load may take ~30-60 s if the app was asleep.
 
 ---
 
@@ -71,9 +75,10 @@ cantina-db/
 │   ├── 03_seed.sql        # realistic sample data (stock derived via triggers)
 │   ├── 04_views.sql       # per-role views (warehouse / owner / waiter)
 │   ├── 05_queries_and_sp.sql  # 10 example queries + app write procedures (all stored procedures)
-│   └── 06_seed_azienda2.sql   # second company (demo data for per-company scoping)
+│   ├── 06_seed_azienda2.sql   # second company (demo data for per-company scoping)
+│   └── 07_grants.sql      # per-role MySQL users + least-privilege GRANTs (run as root)
 ├── app/                   # Streamlit application
-│   ├── db.py              # connection + query/write helpers
+│   ├── db.py              # per-role DB connection + query/write helpers
 │   ├── auth.py            # employee login
 │   ├── forms.py           # write forms (movement / price-list / new beverage / new employee)
 │   ├── pages.py           # per-role pages (owner / warehouse / waiter)
@@ -82,6 +87,9 @@ cantina-db/
 │   ├── progettazione.md   # design document IT (requirements -> logical -> 3NF -> physical -> triggers)
 │   ├── progettazione.en.md# design document EN
 │   └── er.svg / er.png    # E-R schema
+├── DEMO.md                # step-by-step UI walkthrough (triggers/SPs live)
+├── requirements.txt       # app deps for Streamlit Community Cloud (mirrors app/pyproject.toml)
+├── aiven-ca.pem           # CA certificate for TLS to the managed demo DB
 └── README.md
 ```
 
@@ -98,6 +106,21 @@ mariadb -u <user> -p cantina < sql/03_seed.sql
 mariadb -u <user> -p cantina < sql/04_views.sql
 mariadb -u <user> -p cantina < sql/05_queries_and_sp.sql   # stored procedures (queries + app writes)
 mariadb -u <user> -p cantina < sql/06_seed_azienda2.sql    # second company (scoping demo)
+
+# 3. per-role MySQL users + GRANTs (as root — needs views and SPs already loaded)
+sudo mariadb cantina < sql/07_grants.sql
+```
+
+### Run the app locally
+
+The app connects as the logged-in user's *role* (one least-privilege MySQL user
+per role): `app/.streamlit/secrets.toml` holds one `[mysql.<role>]` section per
+role, whose passwords must match `sql/07_grants.sql` (see [`DEMO.md`](DEMO.md)
+§0.2 for the layout). Then:
+
+```bash
+cd app
+uv run streamlit run app.py    # opens on http://localhost:8501
 ```
 
 ### Demo credentials
@@ -130,17 +153,18 @@ company. The app is **split into modules** (`db`/`auth`/`forms`/`pages`/`app`) a
 company (`06_seed_azienda2.sql`) demonstrates per-company scoping. All **integrity triggers**
 of docs Sec. 13.2 are in place: generalization `(t,d)` coherence, wine-list ↔ price-list cellar
 consistency, and the grape-blend cap (with exact `= 100%` enforced by `crea_bevanda`, which now
-takes the whole blend as JSON). Still to come: the GRANT/REVOKE role demo (and new-company
-onboarding, currently DBA-only).
+takes the whole blend as JSON). **DB-level authorization is in place** (docs Sec. 12.3): one
+least-privilege MySQL user per role (`sql/07_grants.sql`) — the app connects as the logged-in
+user's role, so column/table privileges are enforced by the DB itself (`giacenza` is excluded
+from the warehouse role's per-column UPDATE grant: only the triggers may write it). The
+warehouse page also **edits its own price list** (price fixes, soft-delete via `attivo = FALSE`),
+while movements stay an **append-only ledger** — a mistake is corrected by posting a
+compensating movement (*storno*), not by rewriting history. A **public demo** runs on Streamlit
+Community Cloud against a managed MySQL over TLS (link above). Still to come: new-company
+onboarding (currently DBA-only) and the `DEMO.md` screenshots.
 
 ## Roadmap / future work
 
-- **Warehouse editing.** The warehouse role gets `UPDATE`/`DELETE` on its own price
-  list (`listino`) — fix a price, or retire a beverage via soft-delete
-  (`attivo = FALSE`). Stock **movements stay an append-only ledger**: a mistake is
-  corrected by posting a compensating movement (*storno*), not by rewriting history.
-  This keeps the trigger-maintained `giacenza` consistent with **no extra
-  `UPDATE`/`DELETE` triggers** on `movimenti`.
 - **Precise movement editing (planned).** A later iteration will re-implement the
   ledger from *append-only* to **directly editable**: `UPDATE`/`DELETE` on
   `movimenti` backed by delta-maintaining `BEFORE/AFTER UPDATE` and `DELETE` triggers
@@ -176,6 +200,10 @@ esteso con una demo applicativa funzionante.
 
 > ▶ **Vuoi provarlo?** Guida passo-passo all'interfaccia (con trigger/SP dal vivo)
 > in [`DEMO.md`](DEMO.md).
+>
+> 🌐 **Demo online:** <https://cantina-db.streamlit.app/> (Streamlit Community Cloud +
+> MySQL gestito) — entra con le [credenziali demo](#demo-credentials) più sopra.
+> Il primo caricamento può richiedere ~30-60 s se l'app era in sleep.
 
 ### Dominio in breve
 
@@ -224,17 +252,19 @@ moduli** (`db`/`auth`/`forms`/`pages`/`app`) e una seconda azienda
 (`06_seed_azienda2.sql`) dimostra lo scoping per azienda. Tutti i **trigger di integrità**
 del documento Sez. 13.2 sono implementati: coerenza della generalizzazione `(t,d)`, coerenza di
 cantina fra carta vini e listino, e il tetto sul blend di vitigni (con l'uguaglianza esatta
-`= 100%` imposta da `crea_bevanda`, che ora riceve il blend intero come JSON). Ancora da fare:
-la demo dei permessi GRANT/REVOKE (e l'onboarding di una nuova azienda, per ora solo via DBA).
+`= 100%` imposta da `crea_bevanda`, che ora riceve il blend intero come JSON).
+**L'autorizzazione a livello DB è implementata** (Sez. 12.3 del documento): un utente MySQL a
+privilegio minimo per ruolo (`sql/07_grants.sql`) — l'app si connette con il ruolo dell'utente
+loggato, quindi i privilegi di colonna/tabella li impone il DB stesso (`giacenza` è esclusa
+dall'UPDATE per colonna del magazziniere: la scrivono solo i trigger). La pagina magazzino
+inoltre **modifica il proprio listino** (correzione prezzi, soft-delete via `attivo = FALSE`),
+mentre i movimenti restano un **registro append-only** — un errore si corregge con un movimento
+di compensazione (*storno*), non riscrivendo lo storico. Una **demo pubblica** gira su Streamlit
+Community Cloud contro un MySQL gestito via TLS (link sopra). Ancora da fare: l'onboarding di
+una nuova azienda (per ora solo via DBA) e gli screenshot di `DEMO.md`.
 
 ### Roadmap / sviluppi futuri
 
-- **Modifica magazzino.** Il ruolo magazziniere ottiene `UPDATE`/`DELETE` sul proprio
-  listino (`listino`) — correggere un prezzo o ritirare una bevanda via soft-delete
-  (`attivo = FALSE`). I **movimenti restano un registro append-only**: un errore si
-  corregge registrando un movimento di compensazione (*storno*), non riscrivendo lo
-  storico. Così la `giacenza` mantenuta dai trigger resta coerente **senza alcun
-  trigger `UPDATE`/`DELETE`** sui `movimenti`.
 - **Modifica puntuale dei movimenti (previsto).** Un'iterazione successiva
   reimplementerà il registro da *append-only* a **direttamente modificabile**:
   `UPDATE`/`DELETE` su `movimenti` con trigger `BEFORE/AFTER UPDATE` e `DELETE` che

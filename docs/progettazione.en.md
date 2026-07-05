@@ -801,27 +801,93 @@ CREATE OR REPLACE VIEW v_carta_vini_cameriere AS
 > enforced by the `carta_vini_coerenza_cantina` trigger (Sec. 13.2), which guarantees the
 > view is correct.
 
-#### 12.2.1 Per-cellar scoping (application level)
+#### 12.2.1 Operational views per role
 
-The views also expose the identifiers `id_cantina` (and `id_azienda` for the owner):
-these are not "domain" data but **filter keys**. Given the logged-in employee, the
-application restricts the view to their scope:
+Beyond the consultation views (stock / wine list), the external schema defines three
+**operational** views, the base of the application's management pages. The same criterion
+applies — each role sees only the columns it is entitled to — while the row filter
+(cellar/company) is applied by the app (Sec. 12.2.2).
 
-- **warehouse clerk** and **waiter** → to their own cellar: `WHERE id_cantina = ?`
-  (`?` = the session user's `dipendente.id_cantina`);
-- **owner** → to the cellars of their own company:
-  `WHERE id_azienda = (SELECT id_azienda FROM cantina WHERE id_cantina = ?)`.
+| View | Role | Grain | Exposes | Hides | Filter (app) |
+|---|---|---|---|---|---|
+| `v_gestione_magazzino` | warehouse clerk | price-list row of their own cellar | write keys (`id_listino`, `id_bevanda`) + operational columns `giacenza`, `prezzo_acquisto`, `prezzo_vendita`, `margine`, `attivo`, `data_ultimo_aggiornamento` (deactivated rows included) | — | `id_cantina` |
+| `v_gestione_azienda` | owner | price-list row across all the company's cellars | the same columns, plus `id_azienda` for scoping | — (full visibility over the company) | `id_azienda` |
+| `v_dipendenti_azienda` | owner | employee | the company's employee roster (badge number, name, role, cellar, status) | `password_hash` | `id_azienda` |
 
-Two important caveats:
+Unlike the consultation view `v_giacenze_magazziniere`, here the warehouse clerk also sees
+`prezzo_acquisto` and `margine`: this is the view through which they **edit** prices, and the
+`prezzo_vendita >= prezzo_acquisto` CHECK requires seeing both sides. `v_gestione_azienda` has
+the same columns at company scale (it only adds `id_azienda` for scoping). `v_dipendenti_azienda`
+is instead a **separate** view, not a widening of the stock ones: its grain is the *employee*,
+not the price-list entry — merging them would be a modelling *smell* (two distinct entities in
+one view). It covers the "the owner sees their own employees" requirement.
 
-- The filter is at the **application level**, not real access control: the demo connects
-  with a **single** MariaDB user that technically sees everything. DB-level enforcement
-  (`GRANT`/`REVOKE` per role on the views) is the "strong" external schema and remains a
-  planned extension.
-- The owner's ownership is **derived from the assigned cellar**
-  (`dipendente.id_cantina → cantina.id_azienda`), because `azienda.titolare` is a **textual**
-  attribute and not an FK to `dipendente`. With a single company in the seed the two readings
-  coincide; the "full" model would require an FK `azienda.id_titolare → dipendente`.
+#### 12.2.2 Two security levels: columns (views) and rows (application scoping)
+
+The system's security is organized on **two distinct levels**, which answer different
+questions and are enforced in different places:
+
+1. **External schema / columns — *what* a role may see.** Realized by the **views**: each
+   role queries its own view, which exposes only the authorized columns (in the stock
+   consultation views the warehouse clerk does not see `prezzo_acquisto`/`margine`, the owner
+   does). It is **enforced by the DB** through the privileges granted on the views and revoked
+   on the base tables (Sec. 12.3).
+2. **Row-level / multi-tenant — *which rows* a user may see.** "I only see *my* cellars /
+   *my* company": the `id_cantina`/`id_azienda` filter is passed **by the application**,
+   derived from the authenticated session, and **does not live in the view**. This is a design
+   choice motivated by the authentication architecture: the app authenticates the *employee*
+   at the **application** level (bcrypt against the `dipendente` table, user kept in session),
+   while the DB connection uses a MySQL user **per role**, not per individual employee. The DB
+   therefore knows the *role* (and enforces its column privileges) but not the employee's
+   *identity*: a view, in SQL, does not know "who is querying it", so the row filter can only
+   be applicative, driven by the session.
+
+In short: the **column level** is enforced by the DB (views + GRANT/REVOKE), the **row level**
+by the app (filter derived from the authenticated session). The two compose — the view trims
+the columns, the app trims the rows to the user's competence. (The owner's company is
+**derived from the assigned cellar**, `dipendente.id_cantina → cantina.id_azienda`, because
+`azienda.titolare` is a **textual** attribute and not an FK to `dipendente`; the "full" model
+would require an FK `azienda.id_titolare → dipendente`.)
+
+### 12.3 Authorization: per-role privileges (GRANT/REVOKE)
+
+The column level of Sec. 12.2.2 is **enforced by the DB** through three MySQL users, one per
+role, with **least-privilege** grants (`07_grants.sql`), plus a **bootstrap** user
+(`cantina_login`) used before login to verify the credentials: it can only read
+`dipendente` ⨝ `cantina`, nothing else. Each role is granted the minimum needed to operate
+through its own external schema, and direct access to the base tables is **revoked**.
+
+| Role | SELECT (views) | SELECT (support tables) | INSERT / UPDATE | EXECUTE (SP) |
+|---|---|---|---|---|
+| **cameriere** (waiter) | `v_carta_vini_cameriere` | `bevanda`, `vino` (wine dropdown) | — | `carta_vini_stampa`, `vino_tecnical_data` |
+| **magazziniere** (warehouse) | `v_gestione_magazzino` (+ stock views) | `listino`, `bevanda`, `fornitore`, `produttore`, `paese`, `vitigno` | INSERT `movimenti`, `listino`; UPDATE **per column** on `listino` | `crea_bevanda`, `bevande_sotto_media`, `bevande_mai_vendute` |
+| **titolare** (owner) | `v_giacenze_titolare`, `v_gestione_azienda`, `v_dipendenti_azienda` | `cantina` (cellar dropdown) | — | report queries + `crea_dipendente` |
+
+- **waiter** — read-only: its view and the two consultation SPs (printable list, wine
+  technical sheet).
+- **warehouse** — **not** "views only": the forms register movements and update the price
+  list with **direct** `INSERT`, so it needs write privileges on `movimenti` and `listino`,
+  plus read access to the support master data used by the forms. Creates new beverages via SP.
+  The `UPDATE` on `listino` is granted **per column** (`prezzo_vendita`, `prezzo_acquisto`,
+  `iva`, `attivo`): the `giacenza` column is excluded, so not even the warehouse role can
+  tamper with a stock figure by hand — it remains writable only by the triggers on the
+  movements (Sec. 13).
+- **owner** — views + SPs, **no direct writes**: manages employees and reports only through
+  procedures.
+
+**Writes via stored procedures (`SQL SECURITY DEFINER`).** Routing the "sensitive" writes
+(creating a beverage, an employee) through SPs with `SQL SECURITY DEFINER` allows granting the
+role `EXECUTE` only, **without** direct privileges on the tables the procedure touches: the SP
+runs with the *definer*'s permissions, so the integrity invariant is encapsulated and cannot be
+bypassed. `movimenti` and `listino` are the **exception**: the warehouse role has direct
+`INSERT` on them because the forms write them without a dedicated SP — a documented trade-off:
+one extra direct privilege in exchange for simpler forms, with stock consistency still
+guaranteed by the triggers (Sec. 13).
+
+**REVOKE of direct access.** Each role is denied direct access to the base tables not listed
+above: no role can, for instance, read `dipendente.password_hash` or write to tables outside
+its own competence. The result is a "strong" external schema, in which role separation is
+enforced by the DBMS and not only by the application.
 
 ---
 
@@ -999,7 +1065,17 @@ the invariant does not rely on luck: it is guaranteed downstream by the CHECK.
 | 7 | subquery | Controlled-redundancy check: stock stored in the listino vs recomputed from movements (loads − unloads) | — | scalar/derived sum subquery; verifies the Sec. 8 denormalization and tests the triggers | yes |
 | 8 | subquery | Listino beverages never sold (or never moved) | — | anti-join with `NOT EXISTS` (equivalent to `LEFT JOIN … IS NULL`) | |
 | 9 | subquery | The most active employee of each cellar (who recorded the most movements) | — | subquery on the per-group maximum | |
-| 10 | subquery | Beverages below their cellar's average stock (reorder list) | O2 | **correlated subquery** | yes |
+| 10 | subquery | Beverages below their cellar's average stock (reorder list) | O2 | scalar aggregation subquery (their own cellar's average) | yes |
+
+> **Per-company scoping (multi-tenant).** The report queries that aggregate across cellars are
+> **parameterized by company** (`p_id_azienda`, joined through `cantina`), so that an owner only
+> sees their own company's data. Without the parameter, with more than one company in the DB
+> (`06_seed_azienda2.sql`) a global aggregation like `valore_magazzino` would also show other
+> companies' data (**cross-tenant leak**). Parameterized **by company** (`p_id_azienda`):
+> `valore_magazzino`, `margine_per_categoria`, `verifica_ridondanza`, `dipendente_piu_attivo`;
+> **by cellar** (`p_id_cantina`): `bevande_sotto_media`, `bevande_mai_vendute`; `top_seller` and
+> `carta_vini_stampa` already were by construction. It is the *read-side* counterpart of the
+> row-level scoping of Sec. 12.2.2.
 
 ### 14.2 Implementation
 
@@ -1010,6 +1086,10 @@ of each; all have been verified on the real DB.
 
 **Q1 — Technical sheet of a wine** (`vino_tecnical_data(p_id)`). A blend produces multiple
 rows, one per grape variety; collapsing them into a single sheet is the caller's responsibility.
+`regione`/`paese` are `LEFT JOIN`ed because the beverage's origin is optional
+(`bevanda.id_regione` is NULLable); the `paese` join uses an explicit `ON` because, after the
+2NF decomposition, both `produttore` and `regione` carry an `id_paese` and a `USING(id_paese)`
+would be ambiguous.
 
 ```sql
 SELECT b.nome AS descrizione, v.doc, b.categoria, b.gradazione_alcolica, b.volume,
@@ -1026,8 +1106,8 @@ INNER JOIN vino_vitigno vv   USING(id_bevanda)
 INNER JOIN vitigno vit       USING(id_vitigno)
 LEFT  JOIN affinamento af    USING(id_bevanda)   -- optional → LEFT
 INNER JOIN produttore p      USING(id_produttore)
-INNER JOIN regione r         USING(id_regione)
-INNER JOIN paese pa          USING(id_paese)
+LEFT  JOIN regione r         USING(id_regione)   -- optional origin → LEFT
+LEFT  JOIN paese pa          ON pa.id_paese = r.id_paese
 WHERE id_bevanda = p_id;
 ```
 
@@ -1046,20 +1126,26 @@ WHERE cv.id_cantina = p_cantina AND cv.attivo = TRUE
 ORDER BY b.categoria, descrizione;
 ```
 
-**Q3 — Warehouse value per cellar** (`valore_magazzino()`). `SUM` of an expression + `GROUP BY`.
+**Q3 — Warehouse value per cellar** (`valore_magazzino(p_id_azienda)`). `SUM` of an
+expression + `GROUP BY`, filtered by company (Sec. 14.1, scoping note).
 
 ```sql
 SELECT l.id_cantina, SUM(l.giacenza * l.prezzo_acquisto) AS capitale_immobile
 FROM listino l
+INNER JOIN cantina c USING(id_cantina)
+WHERE c.id_azienda = p_id_azienda
 GROUP BY l.id_cantina;
 ```
 
-**Q4 — Average margin per category** (`margine_per_categoria()`). `AVG` over an expression + `GROUP BY`.
+**Q4 — Average margin per category** (`margine_per_categoria(p_id_azienda)`). `AVG` over an
+expression + `GROUP BY`, filtered by company.
 
 ```sql
 SELECT b.categoria, AVG(l.prezzo_vendita - l.prezzo_acquisto) AS margine_medio
 FROM listino l
 INNER JOIN bevanda b USING(id_bevanda)
+INNER JOIN cantina c USING(id_cantina)
+WHERE c.id_azienda = p_id_azienda
 GROUP BY b.categoria;
 ```
 
@@ -1090,8 +1176,9 @@ GROUP BY b.id_bevanda
 HAVING n_blend > 1;
 ```
 
-**Q7 — Controlled-redundancy check** (`verifica_ridondanza()`). Stored vs recomputed stock; each
-sum is protected by `IFNULL(..,0)` because a `SUM` over no rows returns NULL. **0 rows = triggers
+**Q7 — Controlled-redundancy check** (`verifica_ridondanza(p_id_azienda)`). Stored vs
+recomputed stock; each sum is protected by `IFNULL(..,0)` because a `SUM` over no rows returns
+NULL; the two subqueries are **correlated** to the outer price-list row. **0 rows = triggers
 correct** → the Sec. 8 test.
 
 ```sql
@@ -1105,42 +1192,55 @@ SELECT l.id_cantina, l.id_bevanda, l.giacenza,
                    AND m.id_cantina = l.id_cantina AND m.id_bevanda = l.id_bevanda
                  GROUP BY m.id_cantina, m.id_bevanda), 0) ) AS giacenza_ricalcolata
 FROM listino l
+WHERE l.id_cantina IN (SELECT id_cantina FROM cantina WHERE id_azienda = p_id_azienda)
 HAVING giacenza_ricalcolata <> l.giacenza;
 ```
 
-**Q8 — Beverages never sold** (`bevande_mai_vendute()`). Anti-join with `NOT EXISTS`.
+**Q8 — Beverages never sold** (`bevande_mai_vendute(p_id_cantina)`). Anti-join with
+`NOT EXISTS`, on the given cellar's price list.
 
 ```sql
-SELECT b.id_bevanda
-FROM bevanda b
-WHERE NOT EXISTS (SELECT 1 FROM movimenti m1
-                 WHERE b.id_bevanda = m1.id_bevanda AND m1.tipo = 'VENDITA');
+SELECT l.id_bevanda
+FROM listino l
+WHERE l.id_cantina = p_id_cantina
+  AND NOT EXISTS (SELECT 1 FROM movimenti m
+                  WHERE m.id_bevanda = l.id_bevanda
+                    AND m.id_cantina = p_id_cantina
+                    AND m.tipo = 'VENDITA');
 ```
 
-**Q9 — Most active employee per cellar** (`dipendente_piu_attivo()`). Per-group maximum: two
-**non-correlated** derived tables joined (MariaDB does not support correlated LATERAL); the join
-on `(id_cantina, n = max_n)` keeps any ties.
+**Q9 — Most active employee per cellar** (`dipendente_piu_attivo(p_id_azienda)`). Per-group
+maximum: two **non-correlated** derived tables joined (MariaDB does not support correlated
+LATERAL); the join on `(id_cantina, n = max_n)` keeps any ties.
 
 ```sql
 SELECT conteggi.id_cantina, conteggi.id_dipendente, conteggi.n
 FROM (SELECT id_cantina, id_dipendente, COUNT(*) AS n
-      FROM movimenti GROUP BY id_cantina, id_dipendente) AS conteggi
+      FROM movimenti
+      WHERE id_cantina IN (SELECT id_cantina FROM cantina WHERE id_azienda = p_id_azienda)
+      GROUP BY id_cantina, id_dipendente) AS conteggi
 INNER JOIN (SELECT id_cantina, MAX(n) AS max_n
             FROM (SELECT id_cantina, id_dipendente, COUNT(*) AS n
-                  FROM movimenti GROUP BY id_cantina, id_dipendente) AS t
+                  FROM movimenti
+                  WHERE id_cantina IN (SELECT id_cantina FROM cantina WHERE id_azienda = p_id_azienda)
+                  GROUP BY id_cantina, id_dipendente) AS t
             GROUP BY id_cantina) AS massimi
     ON massimi.id_cantina = conteggi.id_cantina AND conteggi.n = massimi.max_n
 ORDER BY conteggi.id_cantina;
 ```
 
-**Q10 — Beverages below their cellar's average stock** (`bevande_sotto_media()`). **Correlated**
-subquery: the average is recomputed for each row's cellar.
+**Q10 — Beverages below their cellar's average stock** (`bevande_sotto_media(p_id_cantina)`).
+Scalar aggregation subquery: the reference average is that of the cellar passed as parameter.
+(In the multi-cellar, parameterless version it was a per-row correlated subquery: with the
+per-cellar scoping the correlation is absorbed by the parameter; the correlated-subquery
+example remains in Q7.)
 
 ```sql
-SELECT l.id_bevanda, id_cantina, b.nome
+SELECT l.id_bevanda, l.id_cantina, b.nome
 FROM listino l
 INNER JOIN bevanda b USING(id_bevanda)
-WHERE l.giacenza < (SELECT AVG(giacenza) FROM listino WHERE l.id_cantina = id_cantina);
+WHERE l.id_cantina = p_id_cantina
+  AND l.giacenza < (SELECT AVG(giacenza) FROM listino WHERE id_cantina = p_id_cantina);
 ```
 
 ### 14.3 Write procedure: `crea_bevanda`

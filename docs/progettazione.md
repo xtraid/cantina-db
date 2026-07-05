@@ -715,12 +715,14 @@ applicativo (Sez. 12.2.2).
 
 | Vista | Ruolo | Grana | Espone | Nasconde | Filtro (app) |
 |---|---|---|---|---|---|
-| `v_gestione_magazzino` | magazziniere | riga di listino della propria cantina | colonne operative `giacenza`, `prezzo_vendita`, `iva`, `attivo`, `data_ultimo_aggiornamento` + derivati `n_movimenti`, `data_ultimo_movimento`, flag `in_carta_vini` | economics d'acquisto (`prezzo_acquisto`, `margine`) | `id_cantina` |
-| `v_gestione_azienda` | titolare | riga di listino su tutte le cantine dell'azienda | **superset** della precedente + `id_azienda`, `prezzo_acquisto`, `margine`, `valore_riga` (`giacenza × prezzo_acquisto`) | — (visibilità piena sull'azienda) | `id_azienda` |
+| `v_gestione_magazzino` | magazziniere | riga di listino della propria cantina | chiavi per le scritture (`id_listino`, `id_bevanda`) + colonne operative `giacenza`, `prezzo_acquisto`, `prezzo_vendita`, `margine`, `attivo`, `data_ultimo_aggiornamento` (incluse le righe disattivate) | — | `id_cantina` |
+| `v_gestione_azienda` | titolare | riga di listino su tutte le cantine dell'azienda | le stesse colonne, più `id_azienda` per lo scoping | — (visibilità piena sull'azienda) | `id_azienda` |
 | `v_dipendenti_azienda` | titolare | dipendente | roster dei dipendenti dell'azienda (matricola, nome, ruolo, cantina, stato) | `password_hash` | `id_azienda` |
 
-`v_gestione_azienda` è il **superset economico** di `v_gestione_magazzino`: stessa grana (la
-riga di listino), con in più le colonne di costo/margine e il valore di riga. `v_dipendenti_azienda`
+A differenza della vista di consultazione `v_giacenze_magazziniere`, qui il magazziniere vede
+anche `prezzo_acquisto` e `margine`: è la vista con cui **modifica** i prezzi, e il CHECK
+`prezzo_vendita >= prezzo_acquisto` richiede di vedere entrambi i lati. `v_gestione_azienda` ha
+le stesse colonne su scala d'azienda (aggiunge solo `id_azienda` per lo scoping). `v_dipendenti_azienda`
 è invece una vista **separata**, non un allargamento delle giacenze: la sua grana è il *dipendente*,
 non la voce di listino — fonderle sarebbe uno *smell* di modellazione (due entità distinte in una
 sola vista). Copre il requisito "il titolare vede i propri dipendenti".
@@ -731,8 +733,8 @@ La sicurezza del sistema è organizzata su **due livelli distinti**, che rispond
 diverse e sono enforced in punti diversi:
 
 1. **Schema esterno / colonne — *cosa* un ruolo può vedere.** Realizzato dalle **viste**: ogni
-   ruolo interroga la propria vista, che espone solo le colonne autorizzate (il magazziniere non
-   vede `prezzo_acquisto`/`margine`, il titolare sì). È **enforced dal DB** tramite i permessi
+   ruolo interroga la propria vista, che espone solo le colonne autorizzate (nella vista di
+   consultazione delle giacenze il magazziniere non vede `prezzo_acquisto`/`margine`, il titolare sì). È **enforced dal DB** tramite i permessi
    concessi sulle viste e negati sulle tabelle di base (Sez. 12.3).
 2. **Row-level / multi-tenant — *quali righe* un utente può vedere.** "Vedo solo le *mie*
    cantine / la *mia* azienda": il filtro per `id_cantina`/`id_azienda` è passato
@@ -753,21 +755,25 @@ un attributo testuale e non una FK.)
 ### 12.3 Autorizzazioni: privilegi per ruolo (GRANT/REVOKE)
 
 Il livello-colonna della Sez. 12.2.2 è **imposto dal DB** tramite tre utenti MySQL, uno per
-ruolo, con privilegi **least-privilege** (`07_grants.sql`). A ciascun ruolo si concede il minimo
-necessario a operare attraverso il proprio schema esterno, e si **revoca** l'accesso diretto alle
-tabelle di base.
+ruolo, con privilegi **least-privilege** (`07_grants.sql`), più un utente di **bootstrap**
+(`cantina_login`) usato prima del login per verificare le credenziali: può solo leggere
+`dipendente` ⨝ `cantina`, nient'altro. A ciascun ruolo si concede il minimo necessario a operare
+attraverso il proprio schema esterno, e si **revoca** l'accesso diretto alle tabelle di base.
 
-| Ruolo | SELECT (viste) | SELECT (tabelle di supporto) | INSERT | EXECUTE (SP) |
+| Ruolo | SELECT (viste) | SELECT (tabelle di supporto) | INSERT / UPDATE | EXECUTE (SP) |
 |---|---|---|---|---|
-| **cameriere** | `v_carta_vini_cameriere` | — | — | `carta_vini_stampa`, `vino_tecnical_data` |
-| **magazziniere** | `v_gestione_magazzino` (+ viste giacenze) | `listino`, `bevanda`, `fornitore`, `produttore`, `vitigno` | `movimenti`, `listino` | `crea_bevanda`, `bevande_sotto_media` |
-| **titolare** | `v_giacenze_titolare`, `v_gestione_azienda`, `v_dipendenti_azienda` | — | — | query di report + `crea_dipendente` |
+| **cameriere** | `v_carta_vini_cameriere` | `bevanda`, `vino` (menu dei vini) | — | `carta_vini_stampa`, `vino_tecnical_data` |
+| **magazziniere** | `v_gestione_magazzino` (+ viste giacenze) | `listino`, `bevanda`, `fornitore`, `produttore`, `paese`, `vitigno` | INSERT `movimenti`, `listino`; UPDATE **per colonna** su `listino` | `crea_bevanda`, `bevande_sotto_media`, `bevande_mai_vendute` |
+| **titolare** | `v_giacenze_titolare`, `v_gestione_azienda`, `v_dipendenti_azienda` | `cantina` (menu delle cantine) | — | query di report + `crea_dipendente` |
 
 - **cameriere** — sola lettura: la sua vista e le due SP di consultazione (stampa carta, scheda
   tecnica del vino).
 - **magazziniere** — **non** è "solo viste": i form registrano movimenti e aggiornano il listino
   con `INSERT` **diretto**, quindi serve il privilegio di scrittura su `movimenti` e `listino`,
   oltre alla lettura delle anagrafiche di supporto usate dai form. Crea bevande nuove via SP.
+  L'`UPDATE` su `listino` è concesso **per colonna** (`prezzo_vendita`, `prezzo_acquisto`, `iva`,
+  `attivo`): la colonna `giacenza` è esclusa, così nemmeno il ruolo di magazzino può alterare a
+  mano una giacenza — che resta scrivibile solo dai trigger sui movimenti (Sez. 13).
 - **titolare** — viste + SP, **nessuna scrittura diretta**: gestisce dipendenti e report solo
   attraverso procedure.
 
@@ -957,7 +963,7 @@ dell'invariante non dipende dalla fortuna: è garantita a valle dal CHECK.
 | 7 | subquery | Verifica della ridondanza controllata: giacenza memorizzata nel listino vs ricalcolata dai movimenti (carichi − scarichi) | — | subquery scalare/derivata di somma; verifica la denormalizzazione di Sez. 8 e collauda i trigger | sì |
 | 8 | subquery | Bevande a listino mai vendute (o mai movimentate) | — | anti-join con `NOT EXISTS` (equivalente a `LEFT JOIN … IS NULL`) | |
 | 9 | subquery | Il dipendente più attivo di ogni cantina (chi ha registrato più movimenti) | — | subquery sul massimo per gruppo | |
-| 10 | subquery | Bevande sotto la giacenza media della propria cantina (lista riordino) | O2 | **subquery correlata** | sì |
+| 10 | subquery | Bevande sotto la giacenza media della propria cantina (lista riordino) | O2 | subquery scalare di aggregazione (media della propria cantina) | sì |
 
 > **Scoping per azienda (multi-tenant).** Le query di report che aggregano su più cantine sono
 > **parametrizzate per azienda** (`p_id_azienda`, con join su `cantina`), così che un titolare
@@ -977,7 +983,10 @@ richiedono (`IN p_...`) e offre un punto d'ingresso unico all'applicazione. Sott
 lo `SELECT` centrale di ciascuna; tutte sono state verificate sul DB reale.
 
 **Q1 — Scheda tecnica di un vino** (`vino_tecnical_data(p_id)`). Un blend produce più righe,
-una per vitigno; il collasso in un'unica scheda è responsabilità del chiamante.
+una per vitigno; il collasso in un'unica scheda è responsabilità del chiamante. `regione`/`paese`
+in `LEFT JOIN` perché l'origine della bevanda è opzionale (`bevanda.id_regione` NULLable); il
+join su `paese` usa un `ON` esplicito perché, dopo la decomposizione 2NF, sia `produttore` sia
+`regione` portano `id_paese` e un `USING(id_paese)` sarebbe ambiguo.
 
 ```sql
 SELECT b.nome AS descrizione, v.doc, b.categoria, b.gradazione_alcolica, b.volume,
@@ -994,8 +1003,8 @@ INNER JOIN vino_vitigno vv   USING(id_bevanda)
 INNER JOIN vitigno vit       USING(id_vitigno)
 LEFT  JOIN affinamento af    USING(id_bevanda)   -- opzionale → LEFT
 INNER JOIN produttore p      USING(id_produttore)
-INNER JOIN regione r         USING(id_regione)
-INNER JOIN paese pa          USING(id_paese)
+LEFT  JOIN regione r         USING(id_regione)   -- origine opzionale → LEFT
+LEFT  JOIN paese pa          ON pa.id_paese = r.id_paese
 WHERE id_bevanda = p_id;
 ```
 
@@ -1014,20 +1023,26 @@ WHERE cv.id_cantina = p_cantina AND cv.attivo = TRUE
 ORDER BY b.categoria, descrizione;
 ```
 
-**Q3 — Valore di magazzino per cantina** (`valore_magazzino()`). `SUM` di un'espressione + `GROUP BY`.
+**Q3 — Valore di magazzino per cantina** (`valore_magazzino(p_id_azienda)`). `SUM` di
+un'espressione + `GROUP BY`, filtrato sull'azienda (Sez. 14.1, nota sullo scoping).
 
 ```sql
 SELECT l.id_cantina, SUM(l.giacenza * l.prezzo_acquisto) AS capitale_immobile
 FROM listino l
+INNER JOIN cantina c USING(id_cantina)
+WHERE c.id_azienda = p_id_azienda
 GROUP BY l.id_cantina;
 ```
 
-**Q4 — Margine medio per categoria** (`margine_per_categoria()`). `AVG` su espressione + `GROUP BY`.
+**Q4 — Margine medio per categoria** (`margine_per_categoria(p_id_azienda)`). `AVG` su
+espressione + `GROUP BY`, filtrato sull'azienda.
 
 ```sql
 SELECT b.categoria, AVG(l.prezzo_vendita - l.prezzo_acquisto) AS margine_medio
 FROM listino l
 INNER JOIN bevanda b USING(id_bevanda)
+INNER JOIN cantina c USING(id_cantina)
+WHERE c.id_azienda = p_id_azienda
 GROUP BY b.categoria;
 ```
 
@@ -1058,9 +1073,10 @@ GROUP BY b.id_bevanda
 HAVING n_blend > 1;
 ```
 
-**Q7 — Verifica della ridondanza controllata** (`verifica_ridondanza()`). Giacenza
+**Q7 — Verifica della ridondanza controllata** (`verifica_ridondanza(p_id_azienda)`). Giacenza
 memorizzata vs ricalcolata dai movimenti; ogni somma è protetta da `IFNULL(..,0)` perché una
-`SUM` senza righe restituisce NULL. **0 righe = trigger corretti** → collaudo di Sez. 8.
+`SUM` senza righe restituisce NULL; le due subquery sono **correlate** alla riga di listino
+esterna. **0 righe = trigger corretti** → collaudo di Sez. 8.
 
 ```sql
 SELECT l.id_cantina, l.id_bevanda, l.giacenza,
@@ -1073,42 +1089,55 @@ SELECT l.id_cantina, l.id_bevanda, l.giacenza,
                    AND m.id_cantina = l.id_cantina AND m.id_bevanda = l.id_bevanda
                  GROUP BY m.id_cantina, m.id_bevanda), 0) ) AS giacenza_ricalcolata
 FROM listino l
+WHERE l.id_cantina IN (SELECT id_cantina FROM cantina WHERE id_azienda = p_id_azienda)
 HAVING giacenza_ricalcolata <> l.giacenza;
 ```
 
-**Q8 — Bevande mai vendute** (`bevande_mai_vendute()`). Anti-join con `NOT EXISTS`.
+**Q8 — Bevande mai vendute** (`bevande_mai_vendute(p_id_cantina)`). Anti-join con
+`NOT EXISTS`, sul listino della cantina indicata.
 
 ```sql
-SELECT b.id_bevanda
-FROM bevanda b
-WHERE NOT EXISTS (SELECT 1 FROM movimenti m1
-                 WHERE b.id_bevanda = m1.id_bevanda AND m1.tipo = 'VENDITA');
+SELECT l.id_bevanda
+FROM listino l
+WHERE l.id_cantina = p_id_cantina
+  AND NOT EXISTS (SELECT 1 FROM movimenti m
+                  WHERE m.id_bevanda = l.id_bevanda
+                    AND m.id_cantina = p_id_cantina
+                    AND m.tipo = 'VENDITA');
 ```
 
-**Q9 — Dipendente più attivo per cantina** (`dipendente_piu_attivo()`). Massimo per gruppo:
-due derived table **non correlate** in JOIN (MariaDB non supporta le LATERAL correlate); il
+**Q9 — Dipendente più attivo per cantina** (`dipendente_piu_attivo(p_id_azienda)`). Massimo per
+gruppo: due derived table **non correlate** in JOIN (MariaDB non supporta le LATERAL correlate); il
 JOIN su `(id_cantina, n = max_n)` mantiene eventuali pareggi.
 
 ```sql
 SELECT conteggi.id_cantina, conteggi.id_dipendente, conteggi.n
 FROM (SELECT id_cantina, id_dipendente, COUNT(*) AS n
-      FROM movimenti GROUP BY id_cantina, id_dipendente) AS conteggi
+      FROM movimenti
+      WHERE id_cantina IN (SELECT id_cantina FROM cantina WHERE id_azienda = p_id_azienda)
+      GROUP BY id_cantina, id_dipendente) AS conteggi
 INNER JOIN (SELECT id_cantina, MAX(n) AS max_n
             FROM (SELECT id_cantina, id_dipendente, COUNT(*) AS n
-                  FROM movimenti GROUP BY id_cantina, id_dipendente) AS t
+                  FROM movimenti
+                  WHERE id_cantina IN (SELECT id_cantina FROM cantina WHERE id_azienda = p_id_azienda)
+                  GROUP BY id_cantina, id_dipendente) AS t
             GROUP BY id_cantina) AS massimi
     ON massimi.id_cantina = conteggi.id_cantina AND conteggi.n = massimi.max_n
 ORDER BY conteggi.id_cantina;
 ```
 
-**Q10 — Bevande sotto la giacenza media della propria cantina** (`bevande_sotto_media()`).
-Subquery **correlata**: la media è ricalcolata per la cantina di ciascuna riga.
+**Q10 — Bevande sotto la giacenza media della propria cantina** (`bevande_sotto_media(p_id_cantina)`).
+Subquery scalare di aggregazione: la media di riferimento è quella della cantina passata come
+parametro. (Nella versione multi-cantina, senza parametro, era una subquery correlata per riga:
+con lo scoping per cantina la correlazione è assorbita dal parametro; l'esempio di subquery
+correlata resta in Q7.)
 
 ```sql
-SELECT l.id_bevanda, id_cantina, b.nome
+SELECT l.id_bevanda, l.id_cantina, b.nome
 FROM listino l
 INNER JOIN bevanda b USING(id_bevanda)
-WHERE l.giacenza < (SELECT AVG(giacenza) FROM listino WHERE l.id_cantina = id_cantina);
+WHERE l.id_cantina = p_id_cantina
+  AND l.giacenza < (SELECT AVG(giacenza) FROM listino WHERE id_cantina = p_id_cantina);
 ```
 
 ### 14.3 Procedura di scrittura: `crea_bevanda`
