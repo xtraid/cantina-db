@@ -1,0 +1,47 @@
+// Cantina DB — logical schema (tables + foreign keys).
+// FK edges point child -> referenced parent. Render with:
+//   graph-easy docs/schema.dot --as=boxart
+digraph cantina {
+    rankdir=TB;
+
+    // org & staff
+    cantina    -> azienda;
+    dipendente -> cantina;
+
+    // geography (2NF split)
+    regione    -> paese;
+    produttore -> paese;
+
+    // beverage + generalization (t,d)
+    bevanda -> produttore;
+    bevanda -> regione;
+    vino           -> bevanda;
+    birra          -> bevanda;
+    super_alcolico -> bevanda;
+    analcolico     -> bevanda;
+
+    // multivalued -> bridge tables
+    birra_luppolo          -> birra;
+    birra_malto            -> birra;
+    analcolico_ingrediente -> analcolico;
+
+    // wine-only details
+    vinificazione -> vino;
+    affinamento   -> vino;
+    vino_vitigno  -> vino;
+    vino_vitigno  -> vitigno;
+
+    // operations
+    movimenti -> bevanda;
+    movimenti -> dipendente;
+    movimenti -> cantina;
+    movimenti -> fornitore;
+    listino   -> bevanda;
+    listino   -> cantina;
+
+    // wine lists
+    carta_vini      -> cantina;
+    carta_vini      -> dipendente;
+    carta_vini_voce -> carta_vini;
+    carta_vini_voce -> listino;
+}
