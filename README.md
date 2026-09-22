@@ -1,502 +1,167 @@
-# 🍷 Cantina DB — winery & beverage storage management
+# Cantina DB
 
-*Relational database and small management app for a winery: global beverage
-catalog, per-cellar stock, load/unload movements with **stock derived and kept
-consistent by triggers**, wine lists, and role-based employee access.*
+Cantina DB is a relational database and small management application for a winery.
+It started as my Database Systems coursework at the University of Trieste and grew
+into a Streamlit application, developed against MariaDB, with a public MySQL-backed demo.
 
-> 🇮🇹 Versione italiana più sotto · [Italiano](#-versione-italiana)
+The database tracks companies, cellars, employees, beverages, stock movements and
+wine lists. Stock is derived from the movement ledger and maintained by database
+triggers rather than edited directly.
 
-Born as a coursework project for **Databases** (University of Trieste) and
-extended with a working demo application.
+**[Live demo](https://cantina-db.streamlit.app/)** ·
+**[Demo walkthrough](DEMO.md)** ·
+**[Design document](docs/progettazione.en.md)** ·
+[Italiano](#italiano)
 
-> ▶ **Want to try it?** Step-by-step UI walkthrough (with triggers/SPs live) in
-> [`DEMO.md`](DEMO.md).
->
-> 🌐 **Live demo:** <https://cantina-db.streamlit.app/> (Streamlit Community Cloud +
-> managed MySQL) — log in with the [demo credentials](#demo-credentials) below.
-> First load may take ~30-60 s if the app was asleep.
+## What it does
 
----
+A company can own multiple cellars. Employees record purchases, sales, loads and
+unloads against a shared beverage catalog. These movements determine the available
+stock for each beverage/cellar pair. The database also models producers, suppliers,
+grape varieties, vinification, aging and wine lists.
 
-## Domain in a nutshell
+The Streamlit app lets employees log in, consult stock and wine lists, and perform
+the operations available to their role. Warehouse staff register movements and
+manage price lists; owners can also create employees within their company.
 
-A **company** (`azienda`) owns one or more **cellars** (`cantina`). Each cellar's
-**employees** (`dipendente`) record stock **movements** (`movimenti`) — load,
-unload, sale, purchase — on **beverages** (`bevanda`) from a global catalog.
-From loads minus unloads we derive the **stock** (`giacenza`), which is an
-attribute of the **price list** (`listino`, the beverage-cellar pair). Each
-cellar publishes **wine lists** (`carta_vini`).
+![E-R diagram](docs/er.png)
 
-A beverage specializes — total, exclusive generalization `(t,d)` — into **wine**,
-**beer**, **spirit**, **soft drink**; wines model grape varieties (N:M blend),
-vinification and aging.
-
-> **Note:** table and column names are in Italian on purpose — they match the
-> design document (`docs/progettazione.md`), which is the graded deliverable.
-
-Full E-R schema and design rationale in
-[`docs/progettazione.en.md`](docs/progettazione.en.md).
-
-![E-R schema](docs/er.png)
-
-*(vector version: [`docs/er.svg`](docs/er.svg) · [editable source on Excalidraw](https://excalidraw.com/#json=0z3IDkIiYpeIeiCDvoeLV,dG9b43487-mfvA6bvlXb-w))*
-
-### Logical schema (as implemented)
-
-The E-R diagram above is the *conceptual* model; the tables actually created by
-`sql/01_schema.sql` drift from it because of the normalization steps (2NF split of
-`paese`/`regione`, producer country as a FK, the `(t,d)` generalization mapped to a
-parent + one child table per subtype, multivalued attributes moved to bridge tables).
-The graph below is the **foreign-key graph of the schema as built** — one box per
-table, each arrow pointing from a table to the table its FK references. It is generated
-from [`docs/schema.dot`](docs/schema.dot) with
-[`graph-easy`](https://metacpan.org/dist/Graph-Easy) (pure-ASCII output, so it renders
-identically on GitHub and in any terminal):
-
-```bash
-graph-easy docs/schema.dot --as=ascii
-```
-
-```
-                          +------------------------+
-                          |      affinamento       |
-                          +------------------------+
-                            |
-                            |
-                            v
-     +--------------+     +------------------------+     +---------------+
-     | vino_vitigno | --> |          vino          | <-- | vinificazione |
-     +--------------+     +------------------------+     +---------------+
-       |                    |
-       |                    |
-       v                    v
-     +--------------+     +----------------------------------------------+     +----------------+
-     |   vitigno    |     |                                              | <-- | super_alcolico |
-     +--------------+     |                                              |     +----------------+
-                          |                                              |
-       +----------------> |                   bevanda                    | <-----------------------+
-       |                  |                                              |                         |
-       |                  |                                              |                         |
-       |               +> |                                              | <+                      |
-       |               |  +----------------------------------------------+  |                      |
-       |               |    |                              |                |                      |
-       |               |    |                              |                |                      |
-       |               |    v                              v                |                      |
-       |               |  +------------------------+     +---------------+  |                      |
-       |               |  |       produttore       |     |    regione    |  |                      |
-       |               |  +------------------------+     +---------------+  |                      |
-       |               |    |                              |                |                      |
-       |               |    |                              |                |                      |
-       |               |    v                              |                |                      |
-       |               |  +------------------------+       |                |                      |
-       |               |  |         paese          | <-----+                |                      |
-       |               |  +------------------------+                        |                      |
-       |               |  +------------------------+                        |                      |
-       |               |  | analcolico_ingrediente |                        |                      |
-       |               |  +------------------------+                        |                      |
-       |               |    |                                               |                      |
-       |               |    |                                               |                      |
-       |               |    v                                               |                      |
-       |               |  +------------------------+                        |                      |
-       |               +- |       analcolico       |                        |                      |
-       |                  +------------------------+                        |                      |
-       |                  +------------------------+                        |                      |
-       |                  |     birra_luppolo      |                        |                      |
-       |                  +------------------------+                        |                      |
-       |                    |                                               |                      |
-       |                    |                                               |                      |
-       |                    v                                               |                      |
-       |                  +------------------------+                        |                      |
-       |                  |         birra          | -----------------------+                      |
-       |                  +------------------------+                                               |
-       |                    ^                                                                      |
-       |                    |                                                                      |
-       |                    |                                                                      |
-       |                  +------------------------+                                               |
-       |                  |      birra_malto       |                                               |
-       |                  +------------------------+                                               |
-       |                                                                                           |
-       |                                                                                           |
-       |                                                                                           |
-     +--------------+     +------------------------+                                               |
-     |   listino    | <-- |    carta_vini_voce     |                                               |
-     +--------------+     +------------------------+                                               |
-       |                    |                                                                      |
-       |                    |                                                                      |
-       |                    v                                                                      |
-       |                  +------------------------+                                               |
-       |                  |       carta_vini       | -+                                            |
-       |                  +------------------------+  |                                            |
-       |                    |                         |                                            |
-       |                    |                         |                                            |
-       |                    v                         |                                            |
-       |                  +------------------------+  |                                            |
-  +----+----------------> |       dipendente       |  |                                            |
-  |    |                  +------------------------+  |                                            |
-  |    |                    |                         |                                            |
-  |    |                    |                         |                                            |
-  |    |                    v                         v                                            |
-  |    |                  +----------------------------------------------+                         |
-  |    +----------------> |                   cantina                    |                         |
-  |                       +----------------------------------------------+                         |
-  |                         |                              ^                                       |
-  |                         |                              |                                       |
-  |                         v                              |                                       |
-  |                       +------------------------+     +---------------+                         |
-  |                       |        azienda         |  +- |   movimenti   | ------------------------+
-  |                       +------------------------+  |  +---------------+
-  |                                                   |    |
-  +---------------------------------------------------+    |
-                                                           v
-                                                         +---------------+
-                                                         |   fornitore   |
-                                                         +---------------+
-```
-
-<details>
-<summary>Full relational schema (all attributes)</summary>
-
-```
-azienda(id_azienda PK, ragione_sociale, tipo, indirizzo_sede_principale,
-        p_iva, email, pec, telefono, titolare, sito_web, logo, attivo)
-cantina(id_cantina PK, nome, indirizzo, tipo, id_azienda FK→azienda)
-dipendente(id_dipendente PK, matricola U, nome, cognome, ruolo,
-        username U, password_hash, email, attivo, id_cantina FK→cantina)
-paese(id_paese PK, nome_paese U, code_iso)
-regione(id_regione PK, nome_regione, zona, id_paese FK→paese) U(id_paese, nome_regione)
-produttore(id_produttore PK, nome, id_paese FK→paese opt., sito_web, attivo)
-fornitore(id_fornitore PK, ragione_sociale, p_iva, is_cliente, is_fornitore,
-        indirizzo, telefono, email, attivo)
-vitigno(id_vitigno PK, nome U, sinonimo)
-
-bevanda(id_bevanda PK, nome, categoria, gradazione_alcolica, volume, is_biologico,
-        data_inserimento, note, foto_url, attivo,
-        id_produttore FK→produttore, id_regione FK→regione opt.)
-vino(id_bevanda PK FK→bevanda, annata, colore, tipologia, metodo,
-        tipo_blend, tipo_denominazione, doc, acidita)
-birra(id_bevanda PK FK→bevanda, stile, tipo_fermentazione, ibu, ebc,
-        densita_originale, densita_finale, is_filtrata, is_pastorizzata,
-        is_rifermentata, lievito)
-super_alcolico(id_bevanda PK FK→bevanda, categoria, materia_prima, tipo_distillazione,
-        numero_distillazioni, anni_invecchiamento, tipo_botte, is_torbato,
-        ppm_fenoli, blend)
-analcolico(id_bevanda PK FK→bevanda, categoria, has_zuccheri_aggiunti, is_frizzante)
-birra_luppolo(id_bevanda PK FK→birra, nome_luppolo PK)
-birra_malto(id_bevanda PK FK→birra, nome_malto PK)
-analcolico_ingrediente(id_bevanda PK FK→analcolico, nome_ingrediente PK)
-vinificazione(id_vinificazione PK, mese_vendemmia, giorni_macerazione,
-        tipo_fermentazione, tipo_vendemmia, id_bevanda U FK→vino)
-affinamento(id_affinamento PK, durata_legno_mesi, durata_bottiglia_mesi,
-        tipo_legno, formato_legno, id_bevanda U FK→vino opt.)
-vino_vitigno(id_bevanda PK FK→vino, id_vitigno PK FK→vitigno,
-        percentuale, annata_vitigno)
-
-movimenti(id_movimento PK, tipo, quantita_bottiglie, prezzo_unitario, data_ora,
-        id_bevanda FK→bevanda, id_dipendente FK→dipendente,
-        id_cantina FK→cantina, id_fornitore FK→fornitore opt.)
-listino(id_listino PK, prezzo_vendita, prezzo_acquisto, iva, giacenza, attivo,
-        data_ultimo_aggiornamento, id_bevanda FK→bevanda, id_cantina FK→cantina)
-        U(id_cantina, id_bevanda)
-carta_vini(id_carta_vini PK, titolo, stato, data_creazione, data_pubblicazione,
-        data_archiviazione, attivo, id_cantina FK→cantina, id_dipendente FK→dipendente)
-carta_vini_voce(id_carta_vini PK FK→carta_vini, id_listino PK FK→listino,
-        ordine, descrizione_posizione)
-```
-
-</details>
+[Vector diagram](docs/er.svg) · [Implemented schema and relations](docs/schema.md)
 
 ## Technical highlights
 
-- **3NF schema**, verified, with two *deliberate, documented* denormalizations
-  (stored stock, `id_cantina` on movements) justified by a volume/operations
-  analysis.
-- **Triggers** keep stock consistent and forbid negative quantities.
-- **Views** as an external schema: each role (waiter, warehouse, owner) sees only
-  what it needs.
-- **10 example queries** as stored procedures (joins, aggregations, subqueries),
-  each tied back to a design choice (Sec. 14) and **runnable in-app** via a
-  per-role toggle.
-- **Streamlit demo**: employee login, per-cellar stock and wine-list consultation
-  (row-scoped to the employee's own cellar), stock-movement registration, atomic
-  catalog writes (new beverage / price-list entry) and owner-side employee creation
-  — all scoped to the user's company both in the UI and server-side in the procedures.
+- **Normalized relational schema**, with stored stock derived from movements.
+- **Stock triggers** update quantities when movements are inserted and reject
+  sales or unloads that exceed available stock.
+- **Stored procedures** handle reporting and operations such as creating a beverage
+  and its related records in one transaction.
+- **Role-based access** uses database views and grants for owners, warehouse staff
+  and waiters, with company/cellar filtering in the application.
+- **Streamlit demo** exposes these operations so you can see triggers and stored
+  procedures in action.
 
-## Stack
+## Live demo
 
-| Component | Technology |
-|---|---|
-| DBMS | MariaDB 10.6+ (InnoDB, utf8mb4) |
-| App | Python + Streamlit |
-| DB access | parameterized queries (SQL-injection safe) |
+[Open the demo](https://cantina-db.streamlit.app/) and sign in with one of the
+[demo accounts](DEMO.md#03-demo-credentials). The app may take a little time to wake up.
 
-## Repo layout
+The [walkthrough](DEMO.md) covers each role. To try the stock logic, log in as a
+warehouse employee, register a load, then a sale, and check the updated quantity.
+A sale larger than the available stock is rejected by the database trigger.
 
-```
-cantina-db/
-├── sql/
-│   ├── 01_schema.sql      # DDL: tables, constraints, indexes
-│   ├── 02_triggers.sql    # stock maintenance (follow_up) + oversell guard
-│   ├── 03_seed.sql        # realistic sample data (stock derived via triggers)
-│   ├── 04_views.sql       # per-role views (warehouse / owner / waiter)
-│   ├── 05_queries_and_sp.sql  # 10 example queries + app write procedures (all stored procedures)
-│   ├── 06_seed_azienda2.sql   # second company (demo data for per-company scoping)
-│   └── 07_grants.sql      # per-role MySQL users + least-privilege GRANTs (run as root)
-├── app/                   # Streamlit application
-│   ├── db.py              # per-role DB connection + query/write helpers
-│   ├── auth.py            # employee login
-│   ├── forms.py           # write forms (movement / price-list / new beverage / new employee)
-│   ├── pages.py           # per-role pages (owner / warehouse / waiter)
-│   └── app.py             # entry point: login gate, session, role routing
-├── docs/
-│   ├── progettazione.md   # design document IT (requirements -> logical -> 3NF -> physical -> triggers)
-│   ├── progettazione.en.md# design document EN
-│   └── er.svg / er.png    # E-R schema
-├── DEMO.md                # step-by-step UI walkthrough (triggers/SPs live)
-├── requirements.txt       # app deps for Streamlit Community Cloud (mirrors app/pyproject.toml)
-├── aiven-ca.pem           # CA certificate for TLS to the managed demo DB
-└── README.md
-```
+## Running locally
 
-## Quick start
+You need MariaDB 10.6+, Python 3.14+ and `uv`. From the repository root, create a
+local database and load the SQL files in numeric order:
 
 ```bash
-# 1. create the database (as root)
 sudo mariadb -e "CREATE DATABASE cantina CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
-
-# 2. load the SQL files in numeric order
-mariadb -u <user> -p cantina < sql/01_schema.sql
-mariadb -u <user> -p cantina < sql/02_triggers.sql
-mariadb -u <user> -p cantina < sql/03_seed.sql
-mariadb -u <user> -p cantina < sql/04_views.sql
-mariadb -u <user> -p cantina < sql/05_queries_and_sp.sql   # stored procedures (queries + app writes)
-mariadb -u <user> -p cantina < sql/06_seed_azienda2.sql    # second company (scoping demo)
-
-# 3. per-role MySQL users + GRANTs (as root — needs views and SPs already loaded)
-sudo mariadb cantina < sql/07_grants.sql
+for script in sql/0[1-7]_*.sql; do
+    sudo mariadb cantina < "$script" || break
+done
 ```
 
-### Run the app locally
+Triggers load before the seed: stock starts at zero and is built from the sample
+movements. The last script creates the database accounts and grants for each role.
 
-The app connects as the logged-in user's *role* (one least-privilege MySQL user
-per role): `app/.streamlit/secrets.toml` holds one `[mysql.<role>]` section per
-role, whose passwords must match `sql/07_grants.sql` (see [`DEMO.md`](DEMO.md)
-§0.2 for the layout). Then:
+Create `app/.streamlit/secrets.toml` using the
+[local configuration example](docs/local-setup.md), then start the app:
 
 ```bash
 cd app
-uv run streamlit run app.py    # opens on http://localhost:8501
+uv run streamlit run app.py
 ```
 
-### Demo credentials
+Open `http://localhost:8501` and use the same [demo accounts](DEMO.md#03-demo-credentials).
 
-Two companies, to show per-company scoping. Passwords are demo-only.
+## Current state
 
-| Company | Username | Role | Password |
-|---|---|---|---|
-| Enoteca Adriatica | `g.bernardi` | owner | `cantina2026` |
-| Enoteca Adriatica | `m.ferri` | warehouse | `cantina2026` |
-| Enoteca Adriatica | `s.conti` | waiter | `cantina2026` |
-| Enoteca Adriatica | `l.rossi` | warehouse (cellar 2) | `cantina2026` |
-| Cantine del Sole | `m.verdi` | owner | `verdi123` |
+The app supports login, stock and wine-list browsing, movement registration,
+price-list changes, beverage creation and employee creation. Movements are
+append-only; corrections use compensating movements. New companies are added by a DBA.
 
-> ℹ️ The numeric order is significant: triggers (`02`) load **before** the seed
-> (`03`) because stock (`giacenza`) is not hardcoded — it starts at 0 and is built
-> up by the `follow_up` trigger as the seed inserts the movements.
+Row-level isolation between companies is enforced partly by the application,
+rather than entirely by the database. This is the main authorization boundary
+I would redesign for production. There is no automated test suite yet;
+[DEMO.md](DEMO.md) documents the manual walkthrough.
 
-## Status
+### Possible next steps
 
-✅ **Working demo — not a finished product.** Everything below works end-to-end and is
-validated on MariaDB, but the project is slated for a **ground-up rework** (see Roadmap
-below). Schema, triggers, all three per-role views and the 10 example
-queries (stored procedures) complete and validated on MariaDB; the design document
-(IT + EN) is complete. The Streamlit app has employee login and a per-role page
-(owner / warehouse / waiter), each **row-scoped to its own cellar** and able to run
-its Sec. 14 stored-procedure queries via a toggle. The app now **writes**:
-movement registration (load/sale → stock kept live by the triggers, oversell surfaced
-to the user), price-list entries, atomic new-beverage creation (`crea_bevanda`, Sec. 14.3)
-and owner-side employee creation (`crea_dipendente`, Sec. 14.4) scoped to the owner's
-company. The app is **split into modules** (`db`/`auth`/`forms`/`pages`/`app`) and a second
-company (`06_seed_azienda2.sql`) demonstrates per-company scoping. All **integrity triggers**
-of docs Sec. 13.2 are in place: generalization `(t,d)` coherence, wine-list ↔ price-list cellar
-consistency, and the grape-blend cap (with exact `= 100%` enforced by `crea_bevanda`, which now
-takes the whole blend as JSON). **DB-level authorization is in place** (docs Sec. 12.3): one
-least-privilege MySQL user per role (`sql/07_grants.sql`) — the app connects as the logged-in
-user's role, so column/table privileges are enforced by the DB itself (`giacenza` is excluded
-from the warehouse role's per-column UPDATE grant: only the triggers may write it). The
-warehouse page also **edits its own price list** (price fixes, soft-delete via `attivo = FALSE`),
-while movements stay an **append-only ledger** — a mistake is corrected by posting a
-compensating movement (*storno*), not by rewriting history. A **public demo** runs on Streamlit
-Community Cloud against a managed MySQL over TLS (link above), and [`DEMO.md`](DEMO.md) is a full
-**screenshot walkthrough** of the UI with triggers and stored procedures firing live. The one
-feature deliberately out of scope — new-company onboarding (currently DBA-only) — is tracked
-under Roadmap below.
+- Enforce company/cellar isolation through one consistent authorization boundary.
+- Add automated checks for permissions, stock updates and oversell rejection.
+- Add a workflow for creating companies and their first employees.
 
-## Roadmap / future work
+## Repository layout
 
-This repo is a **working demo**, not the final product — the next phase is a
-**ground-up rework**, not incremental patching:
+- `sql/` — schema, triggers, seed data, views, stored procedures and grants.
+- `app/` — Streamlit UI, authentication and database access.
+- `docs/` — design documents, schema diagrams and walkthrough screenshots.
 
-- **Architecture → distributed, centralized-sync.** Move off the single monolithic
-  MariaDB to a **central server that syncs with per-cellar clients**: each cellar runs
-  a **local SQLite** database behind a thin client app, so everyday reads/writes hit
-  local data and **query latency drops**, with the central node as the source of truth
-  and the aggregation point across cellars.
-- **Web app → rebuilt.** The Streamlit UI is demo scaffolding; the real front-end will
-  be a proper web app — **likely JS/React, still to be decided**.
-- **Security & interfaces → redone from scratch.** Both the authorization model (see the
-  known-limitation note below) and the UI are to be re-designed, not retrofitted.
+## Documentation
 
-- **Precise movement editing (planned).** A later iteration will re-implement the
-  ledger from *append-only* to **directly editable**: `UPDATE`/`DELETE` on
-  `movimenti` backed by delta-maintaining `BEFORE/AFTER UPDATE` and `DELETE` triggers
-  that re-apply the oversell guard and the non-negative-stock constraint on every path.
-- **Authorization model — known limitation (rework needed).** Access control is
-  currently split across three layers that are only *loosely* coordinated: column
-  scoping in the per-role views, row scoping passed by the app (`WHERE id_cantina/
-  id_azienda = …`), and per-role `GRANT`/`REVOKE`. Because row-level tenant filtering
-  lives in the application (per-role — not per-employee — DB users + a fresh connection
-  per query rule out `CURRENT_USER()`/session-variable enforcement in the DB, since
-  `CURRENT_USER()` identifies only the role), a bug or a bypassed `WHERE` clause can
-  leak cross-tenant data. This pipeline is **held together by convention, not by a
-  single enforced policy**, and should be reworked into one coherent responsibility
-  boundary (e.g. per-employee DB identities with persistent connections, or a
-  security-definer SP layer that owns *all* row filtering). For the current scope it is
-  *good enough* — **good enough beats perfect here** — but it is a deliberate,
-  documented weak point, not a finished design.
-- **Automated tests.** No test suite yet; add one (`uv add --dev pytest`) covering the
-  auth layer, the per-role/tenant row-scoping, and the trigger/oversell paths.
+- Design: [English](docs/progettazione.en.md) / [Italiano](docs/progettazione.md).
+- [Implemented schema](docs/schema.md): foreign-key graph and full relation list.
+- [Demo walkthrough](DEMO.md): accounts, screenshots and operations to try.
+- [Local configuration](docs/local-setup.md): database connection settings.
 
----
+## Italiano
 
-<a name="-versione-italiana"></a>
-## 🇮🇹 Versione italiana
+Cantina DB è un database relazionale con un piccolo gestionale per una cantina.
+È nato come mio elaborato di Basi di Dati all’Università di Trieste ed è diventato
+un’applicazione Streamlit, sviluppata su MariaDB, con una demo pubblica su MySQL.
+La giacenza deriva dai movimenti ed è mantenuta dai trigger del database.
 
-Database relazionale e piccolo gestionale per una **azienda vinicola**: catalogo
-bevande globale, magazzino per cantina, movimenti di carico/scarico con
-**giacenza derivata e mantenuta coerente dai trigger**, carte vini e gestione dei
-dipendenti con permessi per ruolo.
+**[Demo online](https://cantina-db.streamlit.app/)** ·
+**[Guida alla demo](DEMO.md#-guida-dimostrativa-versione-italiana)** ·
+**[Progettazione](docs/progettazione.md)**
 
-Nato come elaborato per il corso di **Basi di Dati** (Università di Trieste) ed
-esteso con una demo applicativa funzionante.
+### Cosa fa
 
-> ▶ **Vuoi provarlo?** Guida passo-passo all'interfaccia (con trigger/SP dal vivo)
-> in [`DEMO.md`](DEMO.md).
->
-> 🌐 **Demo online:** <https://cantina-db.streamlit.app/> (Streamlit Community Cloud +
-> MySQL gestito) — entra con le [credenziali demo](#demo-credentials) più sopra.
-> Il primo caricamento può richiedere ~30-60 s se l'app era in sleep.
+Un’azienda possiede una o più cantine. I dipendenti registrano acquisti, vendite,
+carichi e scarichi su un catalogo condiviso di bevande: questi movimenti determinano
+la giacenza per ogni coppia bevanda/cantina. Il modello comprende anche produttori,
+fornitori, vitigni, vinificazione, affinamento e carte vini.
 
-### Dominio in breve
-
-Un'**azienda** possiede una o più **cantine**. In ogni cantina i **dipendenti**
-registrano i **movimenti** di magazzino (carico, scarico, vendita, acquisto)
-sulle **bevande** del catalogo globale. Da carichi − scarichi si deriva la
-**giacenza**, attributo del **listino** (la coppia bevanda-cantina). Ogni cantina
-pubblica delle **carte vini**.
-
-La bevanda si specializza — generalizzazione totale ed esclusiva `(t,d)` — in
-**vino**, **birra**, **superalcolico**, **analcolico**; del vino si modellano
-vitigni (blend N:M), vinificazione e affinamento.
-
-Schema E-R completo e scelte di progetto in
-[`docs/progettazione.md`](docs/progettazione.md) e [`docs/er.svg`](docs/er.svg)
-([sorgente modificabile su Excalidraw](https://excalidraw.com/#json=0z3IDkIiYpeIeiCDvoeLV,dG9b43487-mfvA6bvlXb-w)).
-
-### Schema logico (come implementato)
-
-Lo schema E-R sopra è il modello *concettuale*; le tabelle davvero create da
-`sql/01_schema.sql` se ne discostano per via delle normalizzazioni (split 2NF di
-`paese`/`regione`, paese del produttore come FK, generalizzazione `(t,d)` mappata su
-padre + una tabella figlia per sottotipo, attributi multivalore spostati in tabelle
-ponte). Il **grafo delle foreign key dello schema come costruito** è nella sezione
-[Logical schema (as implemented)](#logical-schema-as-implemented), generato da
-[`docs/schema.dot`](docs/schema.dot) con `graph-easy docs/schema.dot --as=ascii`
-(schema relazionale completo, con tutti gli attributi, nel `<details>` di quella sezione).
+L’app permette di consultare i dati e svolgere le operazioni previste dal proprio
+ruolo: il magazziniere registra movimenti e gestisce il listino; il titolare può
+anche creare dipendenti della propria azienda. Il [diagramma E-R](docs/er.svg) e lo
+[schema implementato](docs/schema.md) descrivono il modello nel dettaglio.
 
 ### Caratteristiche tecniche
 
-- **Schema 3NF** verificato, con due denormalizzazioni *deliberate e documentate*
-  (giacenza memorizzata, `id_cantina` sui movimenti) motivate dall'analisi di
-  volumi/operazioni.
-- **Trigger** per mantenere la giacenza coerente e impedire scorte negative.
-- **Viste** come schema esterno: ogni ruolo (cameriere, magazziniere, titolare)
-  vede solo ciò che gli compete.
-- **10 query di esempio** come stored procedure (join, aggregazioni, subquery),
-  ciascuna agganciata a una scelta di progetto (Sez. 14) ed **eseguibili
-  nell'app** tramite un toggle per ruolo.
-- **Demo Streamlit**: login per dipendente, consultazione giacenze e carte vini,
-  registrazione movimenti, scritture atomiche sul catalogo (nuova bevanda / voce di
-  listino) e creazione dipendenti lato titolare — tutto filtrato sull'azienda
-  dell'utente, sia in UI sia lato server nelle procedure.
+- Schema relazionale normalizzato, con giacenza memorizzata e derivata dai movimenti.
+- Trigger che aggiornano le scorte e bloccano vendite o scarichi superiori al disponibile.
+- Stored procedure per le interrogazioni e operazioni atomiche, come creare una bevanda.
+- Viste e permessi DB per titolare, magazziniere e cameriere, con filtri per azienda/cantina nell’app.
+- Demo Streamlit per vedere trigger e stored procedure in azione.
 
-### Stato
+### Provare la demo
 
-✅ **Demo funzionante — non un prodotto finito.** Tutto ciò che segue funziona end-to-end
-ed è validato su MariaDB, ma il progetto è destinato a un **rework da zero** (vedi Roadmap
-sotto). Schema, trigger, tutte e tre le viste per ruolo e le 10 query di
-esempio (stored procedure) completi e validati su MariaDB; il documento di
-progettazione (IT + EN) è completo. L'app Streamlit ha il login dipendente e una
-pagina per ruolo (titolare / magazziniere / cameriere), ciascuna **filtrata sulla
-propria cantina** e con le query stored-procedure della Sez. 14 eseguibili tramite
-toggle. L'app ora **scrive**: registrazione movimenti (carico/vendita → giacenza
-aggiornata dai trigger, oversell mostrato all'utente), aggiunta a listino, creazione
-atomica di una bevanda nuova (`crea_bevanda`, Sez. 14.3) e creazione dipendenti lato
-titolare (`crea_dipendente`, Sez. 14.4) filtrata sull'azienda. L'app è **divisa in
-moduli** (`db`/`auth`/`forms`/`pages`/`app`) e una seconda azienda
-(`06_seed_azienda2.sql`) dimostra lo scoping per azienda. Tutti i **trigger di integrità**
-del documento Sez. 13.2 sono implementati: coerenza della generalizzazione `(t,d)`, coerenza di
-cantina fra carta vini e listino, e il tetto sul blend di vitigni (con l'uguaglianza esatta
-`= 100%` imposta da `crea_bevanda`, che ora riceve il blend intero come JSON).
-**L'autorizzazione a livello DB è implementata** (Sez. 12.3 del documento): un utente MySQL a
-privilegio minimo per ruolo (`sql/07_grants.sql`) — l'app si connette con il ruolo dell'utente
-loggato, quindi i privilegi di colonna/tabella li impone il DB stesso (`giacenza` è esclusa
-dall'UPDATE per colonna del magazziniere: la scrivono solo i trigger). La pagina magazzino
-inoltre **modifica il proprio listino** (correzione prezzi, soft-delete via `attivo = FALSE`),
-mentre i movimenti restano un **registro append-only** — un errore si corregge con un movimento
-di compensazione (*storno*), non riscrivendo lo storico. Una **demo pubblica** gira su Streamlit
-Community Cloud contro un MySQL gestito via TLS (link sopra), e [`DEMO.md`](DEMO.md) è una
-**guida illustrata** all'interfaccia con screenshot e trigger/SP dal vivo. L'unica funzione
-volutamente fuori scope — l'onboarding di una nuova azienda (per ora solo via DBA) — è tracciata
-nella Roadmap qui sotto.
+Apri la [demo online](https://cantina-db.streamlit.app/) e usa le
+[credenziali demo](DEMO.md#03-demo-credentials). Il primo caricamento può richiedere
+un po’ di tempo. Come magazziniere, registra un carico e una vendita e osserva la
+giacenza: una vendita superiore alle scorte viene rifiutata dal trigger.
+La [guida illustrata](DEMO.md#-guida-dimostrativa-versione-italiana) mostra gli altri percorsi.
 
-### Roadmap / sviluppi futuri
+### Avvio locale
 
-Questo repo è una **demo funzionante**, non il prodotto finale — la fase successiva
-è un **rework da zero**, non una toppa incrementale:
+Servono MariaDB 10.6+, Python 3.14+ e `uv`. I [comandi sopra](#running-locally)
+creano il database e caricano gli script SQL in ordine numerico: i trigger precedono
+i dati di esempio, così la giacenza viene costruita dai movimenti anche nel seed.
+Configura `app/.streamlit/secrets.toml` seguendo l’[esempio locale](docs/local-setup.md),
+poi esegui `uv run streamlit run app.py` dalla cartella `app`.
+Accedi a `http://localhost:8501` con gli stessi account della demo.
 
-- **Architettura → distribuita, sync centralizzato.** Abbandonare la singola MariaDB
-  monolitica per un **server centrale che si sincronizza con client per cantina**: ogni
-  cantina esegue un **database SQLite locale** dietro una app client leggera, così le
-  letture/scritture quotidiane colpiscono dati locali e il **tempo di query cala**, con
-  il nodo centrale come fonte di verità e punto di aggregazione fra le cantine.
-- **App web → rifatta.** La UI Streamlit è un'impalcatura da demo; il front-end vero sarà
-  una vera web app — **probabilmente JS/React, ancora da decidere**.
-- **Sicurezza e interfacce → rifatte da zero.** Sia il modello di autorizzazione (vedi il
-  limite noto qui sotto) sia le interfacce vanno riprogettati, non rattoppati.
+### Stato e limiti
 
-- **Modifica puntuale dei movimenti (previsto).** Un'iterazione successiva
-  reimplementerà il registro da *append-only* a **direttamente modificabile**:
-  `UPDATE`/`DELETE` su `movimenti` con trigger `BEFORE/AFTER UPDATE` e `DELETE` che
-  mantengono la giacenza sul delta, riapplicando il controllo di oversell e il
-  vincolo di scorta non negativa su ogni percorso.
-- **Modello di autorizzazione — limite noto (da rifare).** Il controllo accessi è
-  oggi spalmato su tre livelli coordinati solo *debolmente*: scoping per colonne nelle
-  viste per ruolo, scoping per righe passato dall'app (`WHERE id_cantina/id_azienda =
-  …`) e `GRANT`/`REVOKE` per ruolo. Poiché il filtro tenant a livello di riga vive
-  **nell'applicazione** (utenti DB per ruolo — non per singolo dipendente — + una nuova
-  connessione a ogni query rendono impossibile l'enforcement lato DB con
-  `CURRENT_USER()`/variabili di sessione, dato che `CURRENT_USER()` identifica solo il
-  ruolo), un bug o un `WHERE` saltato può causare un **leak cross-tenant**. Questa
-  pipeline **sta in piedi per convenzione, non per un'unica policy imposta**, e andrebbe
-  rifatta in un solo confine di responsabilità coerente (es. identità DB per singolo
-  dipendente con connessioni persistenti, oppure uno strato di SP `SECURITY DEFINER`
-  che possiede *tutto* il filtro di riga). Per lo scope attuale è *good enough* —
-  **good enough is better than perfect** qui — ma è un punto debole deliberato e
-  documentato, non un design finito.
-- **Test automatici.** Nessuna suite di test ancora; aggiungerne una
-  (`uv add --dev pytest`) che copra lo strato di autenticazione, lo scoping per riga
-  (ruolo/tenant) e i percorsi trigger/oversell.
+Funzionano login, consultazione di giacenze e carte vini, registrazione dei movimenti,
+modifica dei listini, creazione di bevande e dipendenti. I movimenti non si modificano:
+gli errori si correggono con movimenti di compensazione. Le nuove aziende le aggiunge il DBA.
 
-> ℹ️ L'ordine numerico è significativo: i trigger (`02`) si caricano **prima** del
-> seed (`03`) perché la giacenza non è scritta a mano — parte da 0 e viene costruita
-> dal trigger `follow_up` man mano che il seed inserisce i movimenti.
+L’isolamento delle righe tra aziende dipende in parte dall’applicazione, non è imposto
+interamente dal database: è il principale confine di autorizzazione che riprogetterei
+per un uso in produzione. Non c’è ancora una suite di test automatici;
+la verifica manuale è descritta nella guida alla demo.
+
+I possibili prossimi passi sono rendere uniforme l’autorizzazione, aggiungere test
+su permessi e scorte e introdurre un flusso per creare aziende e primi dipendenti.
